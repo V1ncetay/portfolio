@@ -95,6 +95,11 @@ def build_effects():
                                                       (76, .12), (79, .5))], 0.25, 0.5, 0.3)
     fx["gameover"] = _tones([(midi(n), d) for n, d in ((69, .25), (68, .25), (67, .25), (66, .25), (57, .8))],
                             0.25, 0.5, 0.3)
+    # mode classique : sort lancé, noyade
+    fx["spell"] = _tones([(midi(n), 0.035) for n in (84, 79, 88, 83, 91, 86, 96)], 0.2, 0.25, 0.3)
+    drown = _tones([(300 - 15 * i, 0.06, -40) for i in range(10)], 0.2, 0.5, 0.2)
+    _noise(drown, 0, 0.6, 0.08, 1.0, 8, seed=13)
+    fx["drown"] = drown
     fx["start"] = _tones([(midi(n), 0.06) for n in (57, 60, 64, 69, 72, 76, 81)], 0.22)
     fx["heart"] = _tones([(midi(n), 0.05) for n in (76, 81, 84, 88, 93)] + [(midi(88), 0.15)], 0.22, 0.25, 0.4)
     craft = _tones([(midi(n), 0.08) for n in (60, 67, 72, 79, 84)] + [(midi(91), 0.4)], 0.22, 0.375, 0.5)

@@ -17,6 +17,7 @@ from world import (ROOMS, OBJECTS, DOORS, CAPTIVES, ENEMY_TYPES, ZONES, START, F
                    OPPOSITE, DELTA, SOLID, WATER, EMPTY, FAKE, HEARTS, CRAFTS, CHAPTER_START,
                    BOSS_HITS, BOSS_WEAPON_KIND, build_tiles, door_sides, opening_cells, room_chapter)
 import solver  # noqa: E402
+import selftest_classic  # noqa: E402  (tests du mode Classique CPC 1985)
 
 FOOT_W, FOOT_H = 2, 3          # empreinte (en tuiles) conservative du sorcier 6x16 px
 
@@ -644,7 +645,9 @@ def run():
     pygame.display.set_mode((960, 600))
     from game import Game
     rep = Report()
-    print("== Sorcery selftest ==")
+    print("== Sorcery selftest : mode Classique CPC 1985 ==")
+    selftest_classic.run(rep)
+    print("== Sorcery selftest : mode Sorcery+ (--plus) ==")
     check_data(rep)
     print("[données] %d salles (Ch.1 %d + Ch.2 %d), %d objets, %d portes, %d captifs, %d cœurs" % (
         len(ROOMS), sum(room_chapter(r) == 1 for r in ROOMS), sum(room_chapter(r) == 2 for r in ROOMS),
@@ -694,6 +697,7 @@ def screenshots(outdir):
     from game import Game, Input
     from render import Renderer
     os.makedirs(outdir, exist_ok=True)
+    selftest_classic.screenshots(outdir)
     r = Renderer()
 
     def save(name):

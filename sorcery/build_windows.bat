@@ -20,7 +20,7 @@ set SDL_AUDIODRIVER=
 
 echo === PyInstaller ===
 python -m PyInstaller --noconfirm --clean --onefile --windowed --name Sorcery ^
-    --hidden-import selftest --hidden-import solver main.py || goto :error
+    --hidden-import selftest --hidden-import selftest_classic --hidden-import solver main.py || goto :error
 
 echo.
 echo OK : dist\Sorcery.exe

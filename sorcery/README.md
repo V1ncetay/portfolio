@@ -1,28 +1,171 @@
 # Sorcery : recréation pour Windows
 
-Recréation hommage de **Sorcery** (Virgin Games, 1985, version Amstrad CPC) et de son
-**Chapitre 2** de la version disquette **Sorcery+**, en Python 3 + pygame.
-Tout est généré par le code : graphismes procéduraux au look CPC Mode 0 (160x200, 16 couleurs,
-pixels larges 2:1, mis à l'échelle en 960x600 avec scanlines), sons et musique synthétisés en ondes
-carrées. Aucun fichier d'asset, et rien n'est repris du jeu original (ni graphismes, ni arrangement
-musical : voir [Musique](#musique)).
+Recréation hommage de **Sorcery** (Virgin Games, 1985, version Amstrad CPC), en Python 3 +
+pygame, avec **deux modes** :
 
-![Titre](screenshots/01_titre.png)
-![Salle de départ](screenshots/02_tour_depart.png)
-![Chapitre 2](screenshots/12_chapitre2.png)
-![La Forge noire](screenshots/15_forge_lave.png)
+- **Classique CPC 1985** (par défaut) : les mécaniques **prouvées par l'analyse binaire** de la
+  disquette originale ([docs/ANALYSE_DSK.md](docs/ANALYSE_DSK.md)) : 40 salles reliées par des
+  portes, 37,5 Hz, sorcier 12x24 sans commande « bas », énergie 99, sablier de 15 min 22 s,
+  9 chaudrons dont 2 empoisonnés tirés au sort, noyade, armes dédiées, sorts, barème d'origine.
+  La **carte est originale** (conçue pour ce projet), seules les règles et constantes sont reprises.
+- **Sorcery+** (`--plus`) : la recréation précédente, en écrans à bascule (*flip-screen*), avec le
+  **Chapitre 2** de la version disquette Sorcery+ (monde du Nécromancien).
+
+Tout est généré par le code : graphismes procéduraux au look CPC Mode 0 (pixels larges 2:1, mis à
+l'échelle en 960x600 avec scanlines), sons et musique synthétisés en ondes carrées. Aucun fichier
+d'asset, et rien n'est repris du jeu original : ni sprites, ni tuiles, ni plans de salles, ni
+arrangement musical (voir [Musique](#musique)). Les fichiers extraits de la disquette ne sont ni
+lus à l'exécution ni versionnés.
+
+![Titre (classique)](screenshots/classic_01_titre.png)
+![Village (classique)](screenshots/classic_02_village_depart.png)
+![Cage du bosquet (classique)](screenshots/classic_03_foret_cage.png)
+![Salle du trône (classique)](screenshots/classic_06_salle_du_trone.png)
+![Sorcery+ : Chapitre 2](screenshots/12_chapitre2.png)
 
 ## Lancer le jeu
 
 ```bash
 pip install -r requirements.txt     # pygame (sinon : pip install pygame-ce)
-python main.py
+python main.py                      # mode Classique CPC 1985
+python main.py --plus               # mode Sorcery+ (flip-screen, Chapitre 2)
 ```
 
-Options : `--time 45` (temps limite du Ch.1 en minutes, 30 par défaut), `--time2 25` (Ch.2,
-20 par défaut), `--chapter 2` (démarrer directement au Chapitre 2), `--fullscreen`, `--mute`,
-`--no-scanlines`, `--solution` (affiche la solution calculée), `--selftest`, `--screenshots`,
-`--export-music FICHIER.wav` (exporte le thème du titre en WAV).
+Options communes : `--fullscreen`, `--mute`, `--no-scanlines`, `--selftest` (tests des deux
+modes), `--screenshots` (captures des deux modes), `--export-music FICHIER.wav`.
+Mode classique : `--start N` (impose le départ 0-4, sinon tiré au sort), `--time MIN` (autre durée
+de sablier), `--solution` (solution du solveur pour les 5 départs).
+Mode Sorcery+ : `--plus`, `--time 45` (Ch.1, 30 min par défaut), `--time2 25` (Ch.2, 20 min),
+`--chapter 2` (démarre au Chapitre 2, implique `--plus`), `--plus --solution`.
+
+## Les deux modes
+
+| | Classique CPC 1985 (défaut) | Sorcery+ (`--plus`) |
+|---|---|---|
+| Cadence logique | **37,5 Hz** (une trame d'origine par tick) | 50 Hz |
+| Écran de jeu | 160 x 144, cellules 4 x 8, bandeau Mode 1 sous le jeu | 160 x 152, tuiles 8 x 8 |
+| Navigation | **40 salles**, bords = murs, **portes** (2 par côté au plus) | 37 + 28 écrans à bascule |
+| Sorcier | 12 x 24, 2 px / 2 lignes par trame, **pas de « bas »**, chute constante | 6 x 16, plongée possible |
+| Énergie / temps | **99**, sablier **15 min 22 s** arrêté en pause | 100, 30 + 20 min |
+| Objets | échange seulement (pas de pose dans le vide), sorts | prise / pose / échange |
+| Fin | 8 libérés **puis** retour à l'autel du sanctuaire | vortex puis Nécromancien |
+| Score | +500 salle, +250 objet, +1000 / +500 ennemi, +2000 captif, **sans bonus de temps** | +100 / +500 / ... + bonus de temps |
+
+## Mode Classique CPC 1985
+
+### Contrôles
+
+| Action | Clavier | Manette |
+|---|---|---|
+| Gauche / droite | Flèches, A/D, Q/D | Stick / croix |
+| Voler (monter) | Haut, W ou Z | Haut |
+| Tomber | relâcher Haut (il n'y a **pas** de commande « bas ») | |
+| Feu : frapper, échanger, lancer un sort | Espace (ou Entrée, Ctrl) | Bouton A/B/X/Y |
+| Franchir une porte | pousser contre elle, **au même niveau** | |
+| Pause (le sablier s'arrête) / abandon | Échap, puis Espace pour reprendre ou Échap | Start / Back |
+| Plein écran, scanlines, musique | F11 ou Alt+Entrée, F2, F3 | |
+
+### Règles (valeurs du binaire, voir `docs/ANALYSE_DSK.md`)
+
+- **Déplacement** : 2 px Mode 0 par trame à l'horizontale, 2 lignes par trame en montée comme en
+  chute (vitesse constante, sans inertie). Les **bords d'écran sont des murs** : on ne change de
+  salle que par une **porte**, en poussant contre elle au même Y (on arrive collé à la porte
+  d'en face). Aide d'alignement propre à la recréation : un sorcier décalé de 2 px d'un passage
+  de 3 cellules (trappe, puits) y glisse.
+- **Portes verrouillées** : 4 sens exigent de **porter le BLASON**, 4 la **FLEUR DE LYS** ; l'objet
+  n'est **pas consommé** et le verrou ne vaut que dans un sens (emblème dessiné sur la porte).
+- **Barrières** (grilles de cage verticales, trappes horizontales) : les toucher en portant
+  l'objet requis les ouvre pour la partie, et l'objet est **consommé**.
+- **Captifs** : 8 sorciers en cage ; l'objet ouvre la **grille** de la cage, le sorcier est libéré
+  **au toucher** (+2000) et s'envole. Les libérés attendent au **sanctuaire** ; la partie est
+  gagnée quand les 8 sont libres **et** que l'on se pose sur l'**autel** du sanctuaire.
+- **Feu** (front montant) : au contact d'un ennemi en portant **son arme**, on le tue (+1000,
+  l'arme est consommée, l'ennemi est mort pour toute la partie) ; sinon, si un objet posé est à
+  portée, on l'**échange** avec l'objet porté (premier ramassage d'un objet : +250) ; sinon, une
+  **ÉTOILE FILANTE** (8 projectiles) ou un **SAC DE SORTS** (4 projectiles) est lancé et consommé
+  (+500 par ennemi touché). Sans objet à portée, rien ne se passe : **on ne pose rien dans le vide**.
+- **Ennemis** (3 comportements, 12 x 24) : **T1** poursuivant volant (1 px et 1 ligne par trame,
+  bloqué par les murs, tué par le **BOULET**), **T2** marcheur horizontal (1 px par trame, demi-tours
+  animés, tué par l'**ÉPÉE**), **T3** spectre qui **traverse les murs** (2 px et 1 ligne par trame,
+  tué par la **HACHE**). Contact : 75 / 60 / 50 / 256 d'énergie par trame.
+- **Énergie** 0-99 (départ 99) ; **eau** : s'y poser = **noyade immédiate** ; **feu** (ronces,
+  fosse ardente) : 50/256 par trame au niveau des pieds ; **chaudrons** (9, tous identiques) :
+  posé dessus, +1 par trame... sauf les **2 empoisonnés**, tirés au sort avec le départ, qui
+  retirent 2 par trame. Aucun objet ne rend d'énergie ni de temps.
+- **Sablier** : 640 x 72 VBL = **921,6 s** ; il s'efface dans le bandeau et s'arrête en pause.
+  Fins : énergie nulle, noyade, sablier vide. **Une seule vie.**
+- **5 départs** tirés au sort (salles 0, 9, 14, 20, 34), chacun avec sa paire de chaudrons nocifs.
+
+### Carte du mode classique (40 salles, conception originale)
+
+Zones : village (0-3), forêt (4-9), rivière (16-19), souterrains (20-25), palais (26-29),
+château (10-15), cachots (30-33), landes (34-36), pierres levées (37-38), sanctuaire (39, une
+seule porte). Toutes les liaisons sont réciproques ; `[blason]` / `[lys]` = sens verrouillé.
+Les verrous sont des raccourcis : le graphe des sens libres est fortement connexe (vérifié par
+l'auto-test), si bien qu'un objet-clé laissé du mauvais côté ne bloque jamais la partie.
+
+<details><summary>Table des 40 salles</summary>
+
+| # | Lieu | Portes (côté -> salle) | Chaudron | Barrières (objet) | Captif | Objets posés |
+|---|---|---|---|---|---|---|
+| 0 | Sur La Place Du Village | L1->3, R1->1 |  |  |  | CLE, BOULET |
+| 1 | Pres Du Puits Du Village | L1->0, R1->2, R2->10 [blason] | oui |  |  | GRANDE FIOLE, EPEE |
+| 2 | A La Porte Du Village | L1->1, R1->4, R2->39 |  |  |  | ETOILE FILANTE, GRANDE FIOLE |
+| 3 | Sur Le Chemin Des Landes | L1->34, L2->16, R1->0 [blason] |  |  |  | CLE, BOULET |
+| 4 | A L'Oree De La Foret | L1->2, R1->5, R2->8 [lys] |  |  |  | HACHE, GRANDE FIOLE |
+| 5 | Dans La Clairiere | L1->4, R1->6 | oui |  |  | BLASON, BOULET |
+| 6 | Sous Les Grands Chenes | L1->5, R1->7, R2->9 [lys] |  | H:CLE |  | CLE, SAC DE SORTS |
+| 7 | Dans Le Bosquet | L1->6 |  | V:GRIMOIRE | **oui** | EPEE, GRANDE FIOLE |
+| 8 | Sur Le Sentier Des Ronces | L2->4, R1->9 |  |  |  | FLEUR DE LYS, ETOILE FILANTE |
+| 9 | Pres De La Hutte De L'Ermite | L1->8, L2->6, R1->16 |  |  |  | BOULET, CLE |
+| 10 | Dans La Cour Du Chateau | L2->1, R1->11 |  | V:GRANDE FIOLE |  | GRANDE FIOLE, BOULET |
+| 11 | Dans La Salle Des Gardes | L1->10, R1->12 | oui |  |  | CALICE D'OR, EPEE |
+| 12 | Dans L'Armurerie | L1->11, R1->13, R2->20 |  | V:CLE |  | HACHE, FLEUR DE LYS |
+| 13 | Dans La Chapelle Du Chateau | L1->12, R1->14 |  | V:LYRE | **oui** | ETOILE FILANTE, GRANDE FIOLE |
+| 14 | Au Sommet Du Donjon | L1->13, L2->29, R1->15 [lys] |  |  |  | CLE, SAC DE SORTS |
+| 15 | Sur Le Chemin De Ronde | L1->14, R1->33 |  |  |  | PARCHEMIN, EPEE |
+| 16 | Au Gue De La Riviere | L1->9, R1->17, R2->3 | oui |  |  | CLE, HACHE |
+| 17 | Au Pied De La Cascade | L1->16 [blason], L2->22, R1->18 |  | V:GRANDE FIOLE |  | GRANDE FIOLE, BOULET |
+| 18 | Pres Du Vieux Moulin | L1->17, R1->19 |  | V:COUPE DE VIN | **oui** | CLE, BOULET |
+| 19 | Sur Le Pont De Pierre | L1->18, R1->20 |  |  |  | GRIMOIRE, ETOILE FILANTE |
+| 20 | A L'Entree Des Souterrains | L1->19, L2->12, R1->21 |  | H:CLE |  | GRANDE FIOLE, EPEE |
+| 21 | Dans La Galerie Humide | L1->20, R1->22 | oui |  |  | CLE, HACHE |
+| 22 | Au Carrefour Des Galeries | L1->21, L2->17, R1->23, R2->24 |  |  |  | GRANDE FIOLE, BOULET |
+| 23 | Au Bord De La Fosse Ardente | L1->22 |  | V:BAGUETTE | **oui** | BLASON, BOULET |
+| 24 | Dans Le Boyau | L1->22, R1->25 |  | V:CLE |  | LYRE, GRANDE FIOLE |
+| 25 | A La Sortie Des Souterrains | L1->24, R1->26 [lys], R2->30 |  |  |  | CLE, SAC DE SORTS |
+| 26 | Dans Le Vestibule Du Palais | L1->25, R1->27 | oui |  |  | GRANDE FIOLE, EPEE |
+| 27 | Dans La Galerie Des Glaces | L1->26, R1->28, R2->29 |  | H:GRANDE FIOLE |  | BAGUETTE, HACHE |
+| 28 | Dans La Salle Du Trone | L1->27 |  | V:COURONNE SERTIE | **oui** | BOULET, ETOILE FILANTE |
+| 29 | Sur Le Balcon Du Palais | L1->27, R1->14 |  |  |  | COUPE DE VIN, CLE |
+| 30 | Dans Les Oubliettes | L2->25, R1->31 | oui | V:CLE |  | CLE, BOULET |
+| 31 | Dans La Salle Des Supplices | L1->30, R1->32 |  |  |  | GRANDE FIOLE, EPEE |
+| 32 | Dans La Salle Forte | L1->31 [blason], R1->33 |  | V:PARCHEMIN | **oui** | COURONNE SERTIE, HACHE |
+| 33 | Dans Le Cachot Noir | L1->32, R1->15 |  | H:GRANDE FIOLE |  | LUNE DU SORCIER, ETOILE FILANTE |
+| 34 | Au Milieu De La Lande | L1->35, R1->3 | oui |  |  | CLE, EPEE |
+| 35 | Sur Le Tertre | L1->36, R1->34 |  | V:CALICE D'OR | **oui** | GRANDE FIOLE, HACHE |
+| 36 | Dans Les Marais | L1->37, R1->35 |  | V:CLE |  | SAC DE SORTS, HACHE |
+| 37 | Pres Des Pierres Levees | L1->38, R1->36 | oui |  |  | ETOILE FILANTE, GRANDE FIOLE |
+| 38 | Au Coeur Du Cercle De Pierres | R1->37 |  | V:LUNE DU SORCIER | **oui** | BOULET, CLE |
+| 39 | Dans Le Sanctuaire | L1->2 |  |  |  |  |
+
+</details>
+
+### Solvabilité (solveur `solver.solve_classic`)
+
+Pour chacun des 5 départs, le solveur cherche un plan complet (Dijkstra multi-sources sur le
+graphe salles / points d'intérêt, un seul objet porté, échanges, verrous, barrières consommant
+leur objet, retour arrière si besoin) et estime sa durée à partir des vitesses du binaire :
+
+| Départ | Salle | Étapes | Durée estimée (sablier : 921,6 s) |
+|---|---|---|---|
+| 0 | 0 (village) | 47 | 308 s |
+| 1 | 9 (forêt) | 47 | 311 s |
+| 2 | 14 (château) | 46 | 316 s |
+| 3 | 20 (souterrains) | 47 | 324 s |
+| 4 | 34 (landes) | 47 | 286 s |
+
+`python main.py --solution` affiche le plan détaillé de chaque départ.
 
 ## Construire l'exécutable Windows
 
@@ -56,7 +199,9 @@ votre propre enregistrement dans un dossier `music/` à côté de `main.py` (ou 
 remplacent alors la musique synthétisée correspondante. Aucun fichier de ce type n'est fourni
 avec le projet.
 
-## Contrôles
+## Mode Sorcery+ (`--plus`)
+
+### Contrôles
 
 | Action | Clavier | Manette |
 |---|---|---|
@@ -72,7 +217,7 @@ Sans action du joueur, le sorcier redescend lentement. On ne porte qu'**un seul 
 fois : Espace sur un objet le ramasse, et s'il y a déjà un objet en main, les deux sont échangés.
 Espace dans le vide pose l'objet porté.
 
-## Règles
+### Règles
 
 - **Chapitre 1** : libérer les **8 sorciers captifs**, chacun avec un objet précis (essais et
   erreurs). Le **portail maudit** de Stonehenge s'ouvre alors sur le **vortex** : on y entre en
@@ -97,7 +242,7 @@ Espace dans le vide pose l'objet porté.
   pentacle forgé, +5000 pour le Nécromancien, et +10 par seconde restante à la fin de chaque
   chapitre.
 
-## Chapitre 1 : carte (37 écrans)
+### Chapitre 1 : carte (37 écrans)
 
 `---` passage libre ; `=#=` ou `#` porte ; N en haut. Départ : **L2** (Tour du sorcier).
 
@@ -126,7 +271,7 @@ Espace dans le vide pose l'objet porté.
 | S : Stonehenge | S1-S4 | barrière runique, autel, portail maudit |
 | N0 : Seuil du vortex | 1 | le vortex vers le Chapitre 2 (exige le Sceptre) |
 
-### Objets, portes, captifs (Ch.1)
+#### Objets, portes, captifs (Ch.1)
 
 | Objet | Lieu | Rôle |
 |---|---|---|
@@ -153,7 +298,7 @@ Espace dans le vide pose l'objet porté.
 
 La barrière runique est un raccourci : Stonehenge est aussi accessible par le Palais (P1 -> S2).
 
-## Chapitre 2 : le monde du Nécromancien (28 écrans)
+### Chapitre 2 : le monde du Nécromancien (28 écrans)
 
 Départ : **F1** (Clairière du vortex). Quatre décors inédits : forêt maudite de nuit (lune, arbres
 morts, brume), chapelle en ruine (grès rose, colonnade brisée, vitraux), abîme de feu (lave
@@ -206,7 +351,7 @@ Nouveaux monstres :
 | Pentacles | V4, X7 (+1 forgé en V5) | seuls à blesser le Nécromancien (1 coup = 1 pentacle brisé) |
 | Cœurs sacrés | F3 (caché), F4, A3, A4, V1, V6, X8, X3 | les 8 réunis brisent le sceau (X4/N1) |
 
-### L'énigme des 3 pentacles
+#### L'énigme des 3 pentacles
 
 Il faut frapper trois fois le Nécromancien, chaque coup brise le pentacle porté, et le monde
 n'en contient que deux. Le grimoire de la bibliothèque (A6) donne la recette : déposer la
@@ -221,7 +366,7 @@ l'antichambre) avant d'attaquer, puis de les reprendre un à un entre deux tél�
 points de vie du Nécromancien sont conservés si l'on sort de la salle, et un compteur de
 pentacles s'affiche en haut à droite.
 
-### Solution complète (sortie de `python main.py --solution`)
+#### Solution complète (sortie de `python main.py --plus --solution`)
 
 ```
  1. Prendre HACHE (B4) -> ouvrir PORTE DE BOIS (L3)
@@ -258,7 +403,15 @@ pentacles s'affiche en haut à droite.
 
 ## Graphismes
 
-Tout est peint par le code dans les 16 encres CPC (160x152 logiques, pixels Mode 0) :
+**Mode classique** (`classic_render.py`, `classic_sprites.py`) : palette de jeu de l'original
+(16 encres, §12 de l'analyse), bandeau Mode 1 bleu sous l'aire de jeu avec la phrase
+« VOUS ETES ..., AVEC ... », « ENERGIE nn% » et un sablier qui se vide. Sprites 12 x 24 dessinés
+pour le projet (sorcier, captif, tête ailée, moine, spectre, porte, grille, trappe, chaudron),
+objets 7 x 10 (certains repris des dessins Sorcery+ du projet et requantifiés), tuiles 4 x 8
+procédurales par zone (terre herbue, pierre, roche, marbre, briques), eau, feu et décors animés,
+fonds par zone (étoiles, arbres, stalactites, colonnades, fenêtres, chaînes).
+
+**Mode Sorcery+** : tout est peint par le code dans les 16 encres CPC (160x152 logiques, pixels Mode 0) :
 
 - **Chapitre 1** (`render_ch1.py`) : décors en couches par zone (landes au couchant avec collines,
   menhirs et bruyère ; bois avec canopée, troncs, racines, lucioles et hiboux ; rivière avec sapins en
@@ -275,8 +428,16 @@ Tout est peint par le code dans les 16 encres CPC (160x152 logiques, pixels Mode
 
 ## Ce qui est fidèle, ce qui est inventé
 
-D'après `DESIGN.md`, la plupart des données de l'original n'ont pas pu être vérifiées. Ce qui suit
-reprend donc ses marqueurs [V] (vérifié) et [I] (inféré).
+**Mode classique** : les règles, vitesses, tailles, dégâts, durées, barème, nombre de salles,
+de portes par côté, de chaudrons, de départs, de captifs et les comportements d'ennemis viennent
+du binaire (marqués **[B]** dans `DESIGN.md`, adresses Z80 dans `docs/ANALYSE_DSK.md`). Sont
+inventés : la carte (disposition des 40 salles, graphe des portes, placement des objets,
+ennemis, barrières, cages, départs et paires de chaudrons nocifs), les noms (lieux, objets en
+français, captifs), tous les graphismes, les messages d'aide du bandeau, l'aide d'alignement et
+les comportements fins non modélisés par l'analyse (demi-tour de 8 trames, apparition, agonie).
+
+**Mode Sorcery+** : d'après `DESIGN.md`, la plupart des données de l'original n'ont pas pu être
+vérifiées. Ce qui suit reprend donc ses marqueurs [V] (vérifié) et [I] (inféré).
 
 **Fidèle à l'original [V]** : le sorcier volant soumis à la gravité ; les écrans à bascule
 (*flip-screen*) ; un seul objet porté, échangé contre l'objet ramassé ; les portes et trappes
@@ -305,10 +466,31 @@ boucles de jeu (compositions originales), et tous les graphismes. Le Ch.1 compte
 
 ```bash
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python main.py --selftest
-python main.py --screenshots        # régénère screenshots/*.png
+python main.py --screenshots        # régénère screenshots/classic_*.png et les captures Sorcery+
 ```
 
-L'auto-test vérifie les points suivants :
+**Mode classique** (`selftest_classic.py`) :
+
+- **Constantes** : chaque valeur de `config.py` (`CL_*`) est comparée à celle du binaire
+  (37,5 Hz, 4 x 8, 40 x 18, 12 x 24, butées 148 / 120, 2 px / 2 lignes, 99, 921,6 s =
+  34 560 trames, 75 / 60 / 50 / 50, +1 / -2, portées 18 / 9 et 22 / 10, barème, palette).
+- **Monde** : 40 salles, 8 captifs, 9 chaudrons, 5 départs et 5 paires nocives distinctes, chaque
+  porte utilisée par exactement une liaison, au plus 2 portes par côté et 2 objets / ennemis par
+  salle, 4 + 4 sens verrouillés, graphe connexe **et** fortement connexe sans les sens
+  verrouillés, objets de cage uniques, aucun élément dans un mur, sprites en 12 x 24.
+- **Solvabilité** depuis les **5 départs** dans le temps du sablier, objet-clé atteignable pour
+  chaque porte verrouillée, puis **rejeu du plan dans le vrai moteur** (ramassages, échanges,
+  barrières, libérations, victoire sans bonus).
+- **Chemins jouables** : 136 chemins du solveur (portes, objets, captifs) rejoués au « joystick »
+  (gauche / droite / haut seulement) ; la durée réelle colle à l'estimation du solveur.
+- **Mécanique** : « bas » sans effet, vitesses, bords = murs, portes (même Y exigé), verrous dans
+  un seul sens, noyade et survol de l'eau, feu, dégâts par type d'ennemi, chaudrons de chaque
+  départ, seule la bonne arme tue (et est consommée), sorts, pas de pose dans le vide, échange et
+  +250 unique, barrières, +500 par salle, victoire, défaites, tirage des 5 départs, **pause qui
+  gèle le sablier** (via l'`App`).
+- **Simulation** : 400 trames d'entrées pseudo-aléatoires avec rendu dans chacune des 40 salles.
+
+**Mode Sorcery+** : l'auto-test vérifie les points suivants :
 
 - **Intégrité des données** : sorties existantes, réciproques et cohérentes avec la grille, et
   références d'objets, de portes, de captifs et d'ennemis valides.
@@ -342,7 +524,14 @@ L'auto-test vérifie les points suivants :
 
 | Fichier | Rôle |
 |---|---|
-| `main.py` | point d'entrée, boucle fixe 50 Hz, scènes, entrées clavier et manette, plein écran |
+| `main.py` | point d'entrée, boucle fixe (37,5 Hz classique / 50 Hz Sorcery+), scènes, entrées, plein écran |
+| `config.py` | constantes ; `CL_*` = valeurs du binaire pour le mode classique |
+| `classic_world.py` | carte originale du mode classique : 40 salles, portes, verrous, barrières, objets, départs |
+| `classic_game.py` | logique du mode classique (37,5 Hz) |
+| `classic_render.py`, `classic_sprites.py` | rendu, bandeau Mode 1 et sprites 12 x 24 du mode classique |
+| `selftest_classic.py` | tests et captures du mode classique |
+| `docs/ANALYSE_DSK.md` | analyse binaire de la disquette originale (preuves, adresses Z80) |
+| `tools/*.py` | outils d'analyse (extraction DSK, détokeniseur BASIC, désassembleur Z80, dump) : jamais utilisés par le jeu |
 | `world.py` | **tables de données** des deux chapitres : zones, salles, objets, portes, captifs, cœurs, creuset, ennemis |
 | `game.py` | logique de jeu (indépendante du rendu) |
 | `entities.py` | collisions, sorcier, ennemis, Nécromancien, projectiles |
@@ -351,12 +540,34 @@ L'auto-test vérifie les points suivants :
 | `sprites.py`, `font.py` | pixel art et police 5x7 originaux |
 | `audio.py` | synthèse des effets, boucle de jeu, musique par scène et fichiers de remplacement |
 | `music.py` | partition (Dukas) en texte et synthèse 3 voix façon AY-3-8912 |
-| `solver.py`, `selftest.py` | solveur BFS (deux chapitres) et tests headless |
+| `solver.py`, `selftest.py` | solveurs (Sorcery+ : BFS deux chapitres ; classique : 5 départs, temps) et tests headless |
+
+## Analyse de la disquette et outils
+
+`docs/ANALYSE_DSK.md` documente l'analyse statique de la disquette CPC originale (catalogue,
+chargeur, carte mémoire, variables, physique, salles, objets, ennemis, score), avec l'adresse Z80
+de chaque preuve. Les outils de `tools/` (bibliothèque standard uniquement) permettent de la
+refaire sur **votre propre image** de la disquette :
+
+```bash
+python3 -I tools/dsk_extract.py IMAGE.dsk /chemin/hors/depot/dsk_out
+python3 -I tools/basic_detok.py /chemin/hors/depot/dsk_out/SORCERY.BAS
+python3 -I tools/sorcery_dump.py /chemin/hors/depot/dsk_out --mem /chemin/hors/depot/mem.bin
+python3 -I tools/z80dis.py /chemin/hors/depot/mem.bin 0 1AB3 +40
+```
+
+Aucune donnée du jeu n'est versionnée : extraire hors du dépôt. Le jeu n'utilise jamais ces
+fichiers.
 
 ## Limites connues
 
-- Les valeurs d'équilibrage (dégâts, vitesses, temps) n'ont pas été comparées avec une vraie
-  partie de l'original.
+- Mode classique : analyse **statique** (sans émulateur) ; la cadence de 37,5 Hz suppose que la
+  boucle d'origine tient dans son budget. Les mouvements fins des ennemis (ordre des sprites,
+  durée des demi-tours) et la géométrie exacte de contact des barrières sont approchés. Le
+  solveur ignore l'énergie (les ennemis peuvent être évités ou tués, les chaudrons rechargent) :
+  il prouve l'ordre portes / objets / barrières et la durée, pas l'adresse nécessaire.
+- Mode Sorcery+ : les valeurs d'équilibrage (dégâts, vitesses, temps) n'ont pas été comparées
+  avec une vraie partie de l'original.
 - Pas de sauvegarde. Le meilleur score n'est conservé que pendant la session. On ne peut pas
   revenir au Ch.1 une fois le vortex franchi.
 - La partie complète du test téléporte le sorcier entre les étapes : elle valide la logique,

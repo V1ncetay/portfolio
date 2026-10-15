@@ -35,7 +35,7 @@ jobs:
         run: python main.py --selftest
 
       - name: Construire Sorcery.exe
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name Sorcery --hidden-import selftest --hidden-import solver main.py
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name Sorcery --hidden-import selftest --hidden-import selftest_classic --hidden-import solver main.py
 
       - name: Lancer Sorcery.exe (autotest + captures)
         shell: pwsh

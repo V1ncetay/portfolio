@@ -1,12 +1,14 @@
 """Sorcery - recréation pour Windows (Python + pygame).
 
-    python main.py               jouer
-    python main.py --selftest    tests headless (données, BFS, simulation)
-    python main.py --screenshots génère des captures dans screenshots/
-    python main.py --solution    affiche la solution calculée par le solveur
+    python main.py               jouer (mode « Classique CPC 1985 », par défaut)
+    python main.py --plus        jouer au mode Sorcery+ (flip-screen, Chapitre 2)
+    python main.py --selftest    tests headless des deux modes (données, BFS, simulation)
+    python main.py --screenshots génère des captures dans screenshots/ (classic_*.png + Sorcery+)
+    python main.py --solution    affiche la solution du solveur (classique : les 5 départs)
     python main.py --export-music F.wav  exporte le thème du titre en WAV
-Options : --time MIN (durée du Ch.1), --time2 MIN (Ch.2), --chapter 2 (démarrer au
-Chapitre 2), --fullscreen, --mute, --no-scanlines
+Options : --time MIN (durée : Ch.1 de Sorcery+, ou sablier du mode classique), --time2 MIN
+(Ch.2), --chapter 2 (Sorcery+ au Chapitre 2), --start N (classique : départ 0-4),
+--fullscreen, --mute, --no-scanlines
 """
 import argparse
 import os
@@ -18,22 +20,37 @@ if HERE not in sys.path:
 
 import pygame  # noqa: E402
 
-from config import WINDOW_W, WINDOW_H, TICK_S, TIME_LIMIT_MIN, TIME_LIMIT_CH2_MIN  # noqa: E402
+from config import (WINDOW_W, WINDOW_H, TICK_S, TIME_LIMIT_MIN, TIME_LIMIT_CH2_MIN,  # noqa: E402
+                    CL_FRAME_S, CL_FRAME_HZ, CL_TIME_FRAMES)
 from game import Game, Input  # noqa: E402
+from classic_game import ClassicGame  # noqa: E402
+from classic_render import ClassicRenderer  # noqa: E402
+from render import Renderer  # noqa: E402
+from audio import Audio  # noqa: E402
 
 
 class App:
-    def __init__(self, fullscreen=False, mute=False, time_min=TIME_LIMIT_MIN, scanlines=True, headless=False,
-                 chapter=1, time2_min=TIME_LIMIT_CH2_MIN):
+    """mode = "classic" (CPC 1985, 37,5 Hz, par défaut) ou "plus" (Sorcery+, 50 Hz)."""
+
+    def __init__(self, fullscreen=False, mute=False, time_min=None, scanlines=True, headless=False,
+                 chapter=1, time2_min=TIME_LIMIT_CH2_MIN, mode="classic", start=None):
         pygame.mixer.pre_init(22050, -16, 1, 512)
         pygame.init()
-        from render import Renderer
-        from audio import Audio
         self.headless = headless
-        flags = pygame.SCALED
+        self.mode = mode
+        self.start = start
+        flags = 0 if headless else pygame.SCALED
         self.screen = pygame.display.set_mode((WINDOW_W, WINDOW_H), flags)
-        pygame.display.set_caption("Sorcery - recreation CPC")
-        self.renderer = Renderer()
+        if mode == "classic":
+            pygame.display.set_caption("Sorcery - mode classique CPC 1985")
+            self.renderer = ClassicRenderer()
+            self.tick_s = CL_FRAME_S
+        else:
+            pygame.display.set_caption("Sorcery+ - recreation CPC")
+            self.renderer = Renderer()
+            self.tick_s = TICK_S
+            if time_min is None:
+                time_min = TIME_LIMIT_MIN
         self.renderer.scanlines = scanlines
         try:
             icon = pygame.transform.scale(self.renderer.spr["wiz0"], (32, 36))
@@ -119,8 +136,12 @@ class App:
 
     # ------------------------------------------------------------------ scènes
     def new_game(self):
-        self.game = Game(audio=self.audio, time_limit_min=self.time_min, chapter=self.chapter,
-                         time2_min=self.time2_min)
+        if self.mode == "classic":
+            frames = CL_TIME_FRAMES if self.time_min is None else int(self.time_min * 60 * CL_FRAME_HZ)
+            self.game = ClassicGame(audio=self.audio, start=self.start, time_frames=frames)
+        else:
+            self.game = Game(audio=self.audio, time_limit_min=self.time_min, chapter=self.chapter,
+                             time2_min=self.time2_min)
         self.audio.play("start")
         self.track = None
         self.sync_music()
@@ -147,7 +168,7 @@ class App:
         self.audio.play_music("title")
 
     def step(self, inp, edges):
-        """Un tick logique (50 Hz). edges = ensemble {'action', 'esc'}."""
+        """Un tick logique (37,5 Hz en classique, 50 Hz en Sorcery+). edges = {'action', 'esc'}."""
         self.scene_t += 1
         if self.scene == "title":
             if "action" in edges:
@@ -160,7 +181,7 @@ class App:
                 return
             inp.action = "action" in edges
             self.game.update(inp)
-            if self.game.state in ("play", "chapter"):
+            if self.game.state in ("play", "chapter", "appear"):
                 self.sync_music()
             if self.game.state == "lost":
                 self.scene, self.scene_t = "over", 0
@@ -201,10 +222,10 @@ class App:
         while self.running:
             acc += min(clock.tick(120) / 1000.0, 0.1)
             self.handle_events()
-            while acc >= TICK_S and self.running:
+            while acc >= self.tick_s and self.running:
                 edges, self.keys_edge = self.keys_edge, set()
                 self.step(self.held_input(), edges)
-                acc -= TICK_S
+                acc -= self.tick_s
             self.draw()
             self.renderer.present(self.screen)
             pygame.display.flip()
@@ -218,9 +239,12 @@ def main(argv=None):
     ap.add_argument("--selftest", action="store_true", help="tests headless")
     ap.add_argument("--screenshots", nargs="?", const=os.path.join(HERE, "screenshots"), help="captures PNG")
     ap.add_argument("--solution", action="store_true", help="affiche la solution")
-    ap.add_argument("--time", type=int, default=TIME_LIMIT_MIN, help="temps limite du Ch.1 (minutes)")
+    ap.add_argument("--plus", action="store_true", help="mode Sorcery+ (flip-screen, Chapitre 2)")
+    ap.add_argument("--time", type=float, default=None,
+                    help="temps limite en minutes (Sorcery+ Ch.1 : 30 ; classique : 15:22 du binaire)")
     ap.add_argument("--time2", type=int, default=TIME_LIMIT_CH2_MIN, help="temps limite du Ch.2 (minutes)")
-    ap.add_argument("--chapter", type=int, choices=(1, 2), default=1, help="chapitre de départ")
+    ap.add_argument("--chapter", type=int, choices=(1, 2), default=1, help="chapitre de départ (Sorcery+)")
+    ap.add_argument("--start", type=int, choices=range(5), default=None, help="classique : départ 0-4")
     ap.add_argument("--fullscreen", action="store_true")
     ap.add_argument("--mute", action="store_true")
     ap.add_argument("--no-scanlines", action="store_true")
@@ -243,14 +267,24 @@ def main(argv=None):
         if args.screenshots:
             selftest.screenshots(args.screenshots)
         return code
+    plus = args.plus or args.chapter == 2
     if args.solution:
         import solver
-        win, plan, _ = solver.solve()
-        print("Gagnable :", win)
-        print("\n".join(solver.describe(plan)))
-        return 0 if win else 1
+        if plus:
+            win, plan, _ = solver.solve()
+            print("Gagnable :", win)
+            print("\n".join(solver.describe(plan)))
+            return 0 if win else 1
+        ok = True
+        for st in ([args.start] if args.start is not None else range(5)):
+            win, plan, frames, _ = solver.solve_classic(st)
+            ok &= win
+            print("== Depart %d (salle %d) : gagnable=%s" % (st, solver.CW.STARTS[st][0], win))
+            print("\n".join(solver.describe_classic(plan, frames)))
+        return 0 if ok else 1
     App(fullscreen=args.fullscreen, mute=args.mute, time_min=args.time,
-        scanlines=not args.no_scanlines, chapter=args.chapter, time2_min=args.time2).run()
+        scanlines=not args.no_scanlines, chapter=args.chapter, time2_min=args.time2,
+        mode="plus" if plus else "classic", start=args.start).run()
     return 0
 
 
