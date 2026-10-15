@@ -1,10 +1,13 @@
 """Logique de jeu (indépendante du rendu) : une partie de Sorcery."""
 import random
+import zlib
 
-from config import (TILE, PLAY_W, PLAY_H, ENERGY_MAX, TICK_HZ, TIME_LIMIT_MIN,
-                    SCORE_KILL, SCORE_FREE, SCORE_BOSS, SCORE_TIME_PER_S)
-from world import (ROOMS, OBJECTS, DOORS, CAPTIVES, START, FINAL_WEAPON, BOSS_HITS, WATER,
-                   build_tiles, door_sides, doors_in_room, opening_cells)
+from config import (TILE, PLAY_W, PLAY_H, ENERGY_MAX, TICK_HZ, TIME_LIMIT_MIN, TIME_LIMIT_CH2_MIN,
+                    CHAPTER_SCREEN_TICKS, SCORE_KILL, SCORE_FREE, SCORE_BOSS, SCORE_TIME_PER_S,
+                    SCORE_HEART, SCORE_CRAFT)
+from world import (ROOMS, OBJECTS, DOORS, CAPTIVES, START, BOSS_HITS, BOSS_WEAPON_KIND, WATER,
+                   HEARTS, CRAFTS, CHAPTER_START, build_tiles, door_sides, doors_in_room,
+                   opening_cells, gate_rect)
 from entities import RoomMap, Player, Enemy, Necromancer, overlap, grow
 
 ITEM_W, ITEM_H = 7, 10
@@ -27,7 +30,8 @@ class NullAudio:
 class Game:
     """État complet d'une partie. update(inp) = un tick de 1/50 s."""
 
-    def __init__(self, audio=None, time_limit_min=TIME_LIMIT_MIN, seed=1985):
+    def __init__(self, audio=None, time_limit_min=TIME_LIMIT_MIN, seed=1985, chapter=1,
+                 time2_min=TIME_LIMIT_CH2_MIN):
         self.audio = audio or NullAudio()
         self.seed = seed
         self.rng = random.Random(seed)
@@ -35,12 +39,18 @@ class Game:
         self.doors_open = set()
         self.items = {}
         for oid, o in OBJECTS.items():
-            tx, ty = o["at"]
-            it = dict(room=o["room"], x=float(tx * TILE), y=float(ty * TILE + TILE - ITEM_H), vy=0.0)
-            self.items[oid] = it
-            self._settle(it)
+            # un objet fabriqué n'existe pas tant qu'il n'a pas été forgé
+            self.items[oid] = None if o.get("crafted") else self._spawn_item(oid)
         self.carried = None
         self.freed = []
+        self.hearts = []                       # cœurs sacrés ramassés (Ch.2)
+        self.craft_in = {cid: [] for cid in CRAFTS}   # ingrédients déposés par station
+        self.crafted = set()
+        self.boss_hp = BOSS_HITS               # persiste entre deux entrées dans le sanctuaire
+        self.chapter = 1
+        self.next_chapter = None
+        self.chapter_bonus = 0
+        self.time2_min = time2_min
         self.energy = ENERGY_MAX
         self.time_total = time_limit_min * 60 * TICK_HZ
         self.time_left = self.time_total
@@ -61,10 +71,38 @@ class Game:
         self.contact = {}
         self.visited = set()
         self.rooms_version = 0
-        sx, sy = START["at"]
+        if chapter == 2:                       # --chapter 2 : Ch.1 considéré comme terminé
+            self.freed = list(CAPTIVES)
+            self.items["sceptre"] = None
+            self.start_chapter(2)
+        else:
+            sx, sy = START["at"]
+            self.player = Player(sx * TILE, sy * TILE)
+            self.enter_room(START["room"])
+            self.say("LIBEREZ LES 8 SORCIERS CAPTIFS !", 11, 200)
+
+    def start_chapter(self, n):
+        """Début d'un chapitre : énergie pleine, nouveau compte à rebours, score conservé."""
+        self.chapter = n
+        self.next_chapter = None
+        self.state = "play"
+        self.energy = ENERGY_MAX
+        self.time_total = self.time2_min * 60 * TICK_HZ
+        self.time_left = self.time_total
+        self.carried = None
+        self.particles, self.freed_anims, self.fireballs = [], [], []
+        st = CHAPTER_START[n]
+        sx, sy = st["at"]
         self.player = Player(sx * TILE, sy * TILE)
-        self.enter_room(START["room"])
-        self.say("LIBEREZ LES 8 SORCIERS CAPTIFS !", 11, 200)
+        self.enter_room(st["room"])
+        self.say("CHAPITRE %d : TROUVEZ LES %d COEURS SACRES !" % (n, len(HEARTS)), 11, 250)
+
+    def _spawn_item(self, oid):
+        o = OBJECTS[oid]
+        tx, ty = o["at"]
+        it = dict(room=o["room"], x=float(tx * TILE), y=float(ty * TILE + TILE - ITEM_H), vy=0.0)
+        self._settle(it)
+        return it
 
     # ------------------------------------------------------------------ helpers
     def say(self, text, color=15, ticks=150):
@@ -92,7 +130,8 @@ class Game:
         self.room = self._room_map(rid)
         self.visited.add(rid)
         data = ROOMS[rid]
-        rrng = random.Random(hash((self.seed, rid, self.tick)) & 0xFFFFFFFF)
+        # graine stable (hash() de str est salé par processus : captures non reproductibles)
+        rrng = random.Random(zlib.crc32(("%d:%s:%d" % (self.seed, rid, self.tick)).encode()))
         self.enemies = []
         for e in data["enemies"]:
             kind, tx, ty = e[:3]
@@ -101,7 +140,7 @@ class Game:
         self.fireballs = []
         self.boss = None
         if data["boss"] and not self.boss_defeated:
-            self.boss = Necromancer(data["boss"]["anchors"], BOSS_HITS, rrng)
+            self.boss = Necromancer(data["boss"]["anchors"], self.boss_hp, rrng)
         self.grace = 30
         self.contact = {}
         self.rooms_version += 1
@@ -116,6 +155,10 @@ class Game:
     @staticmethod
     def cage_rect(c):
         return (c["at"][0] * TILE, c["at"][1] * TILE, CAGE_W, CAGE_H)
+
+    @staticmethod
+    def craft_rect(c):
+        return (c["at"][0] * TILE, c["at"][1] * TILE + 2 * TILE - CAULDRON_H, CAULDRON_W, CAULDRON_H)
 
     @staticmethod
     def cauldron_rect(c):
@@ -133,7 +176,7 @@ class Game:
         self.doors_open.add(did)
         self.room = self._room_map(self.room_id)
         self.rooms_version += 1
-        self.audio.play("portal" if DOORS[did].get("style") == "portail" else "door")
+        self.audio.play("portal" if DOORS[did].get("style") in ("portail", "sceau") else "door")
         self.say(DOORS[did]["name"] + " OUVERTE !", 7)
         for room, direction in door_sides(did):
             if room == self.room_id:
@@ -159,13 +202,62 @@ class Game:
         else:
             self.say("%s EST LIBRE !  (%d/%d)" % (c["name"], n, len(CAPTIVES)), 7, 180)
 
+    def collect_heart(self, oid):
+        it = self.items[oid]
+        self.items[oid] = None
+        self.hearts.append(oid)
+        self.energy = min(ENERGY_MAX, self.energy + OBJECTS[oid].get("energy", 15))
+        self.score += SCORE_HEART
+        self.audio.play("heart")
+        self.spark(it["x"] + 3, it["y"] + 3, 13, 24, 1.4, 35)
+        n = len(self.hearts)
+        if n == len(HEARTS):
+            for did, d in DOORS.items():
+                if d.get("need_hearts") is not None and n >= d["need_hearts"]:
+                    self.open_door(did)
+            self.say("LES %d COEURS ! LE SCEAU DU SANCTUAIRE SE BRISE" % n, 11, 300)
+        else:
+            self.say("COEUR SACRE !  (%d/%d)" % (n, len(HEARTS)), 13, 160)
+
+    def _touch_craft(self, cid, c):
+        """Dépose l'ingrédient porté dans la station ; forge l'objet quand tout y est."""
+        if c["makes"] in self.crafted:
+            return
+        inside = self.craft_in[cid]
+        if self.carried in c["needs"] and self.carried not in inside:
+            oid = self.carried
+            inside.append(oid)
+            self.items[oid] = None
+            self.carried = None
+            r = self.craft_rect(c)
+            self.spark(r[0] + 8, r[1] + 2, 12, 16, 1.0)
+            if len(inside) == len(c["needs"]):
+                self.crafted.add(c["makes"])
+                self.items[c["makes"]] = self._spawn_item(c["makes"])
+                self.score += SCORE_CRAFT
+                self.audio.play("craft")
+                self.spark(r[0] + 8, r[1] - 4, 15, 40, 1.8, 45)
+                self.say("LE %s FORGE UN NOUVEAU %s !" % (c["name"], OBJECTS[c["makes"]]["name"]), 11, 250)
+            else:
+                self.audio.play("cauldron")
+                self.say("%s FOND DANS LE %s (%d/%d)" % (OBJECTS[oid]["name"], c["name"],
+                                                         len(inside), len(c["needs"])), 12, 200)
+            self.contact[("craft", cid)] = True
+        elif ("craft", cid) not in self.contact:
+            self.contact[("craft", cid)] = True
+            if self.carried:
+                self.audio.play("denied")
+                self.say("LE %s REJETTE : %s" % (c["name"], OBJECTS[self.carried]["name"]), 4)
+            else:
+                self.say("LE %s ATTEND L'ARGENT ET LA LUNE..." % c["name"], 12)
+
     def do_action(self):
         p = self.player
         pr = grow(p.rect(), 2)
         best, bestd = None, 1e9
         pcx, pcy = p.center()
         for oid, it in self.items_here():
-            if OBJECTS[oid]["kind"] == "potion":
+            if OBJECTS[oid]["kind"] in ("potion", "coeur"):
                 continue
             if overlap(pr, self.item_rect(it)):
                 d = abs(it["x"] + ITEM_W / 2 - pcx) + abs(it["y"] + ITEM_H / 2 - pcy)
@@ -204,6 +296,10 @@ class Game:
         self._update_particles()
         if self.state == "play":
             self._update_play(inp)
+        elif self.state == "chapter":            # écran de transition « CHAPITRE 2 »
+            self.timer -= 1
+            if self.timer <= 0 or (inp.action and self.timer < CHAPTER_SCREEN_TICKS - 50):
+                self.start_chapter(self.next_chapter)
         elif self.state == "dying":
             self.timer -= 1
             self.player.y = min(self.player.y + 0.5, PLAY_H - self.player.h - TILE)
@@ -261,6 +357,8 @@ class Game:
                 self.audio.play("potion")
                 self.say("UN COEUR MAGIQUE : ENERGIE +", 13)
                 self.spark(it["x"] + 3, it["y"] + 3, 13, 15)
+            elif o["kind"] == "coeur" and overlap(pr, self.item_rect(it)):
+                self.collect_heart(oid)
 
         if inp.action:
             self.do_action()
@@ -279,11 +377,16 @@ class Game:
                 self.open_door(did)
             elif d.get("need_freed") is not None and len(self.freed) >= d["need_freed"]:
                 self.open_door(did)
+            elif d.get("need_hearts") is not None and len(self.hearts) >= d["need_hearts"]:
+                self.open_door(did)
             elif ("door", did) not in self.contact:
                 self.contact[("door", did)] = True
                 self.audio.play("denied")
                 if d.get("need_freed") is not None:
                     self.say("LIBEREZ D'ABORD LES %d SORCIERS !" % d["need_freed"], 4)
+                elif d.get("need_hearts") is not None:
+                    self.say("LE SCEAU EXIGE %d COEURS SACRES (%d/%d)" % (
+                        d["need_hearts"], len(self.hearts), d["need_hearts"]), 4)
                 else:
                     self.say(d["name"] + " : FERMEE", 4)
 
@@ -303,6 +406,39 @@ class Game:
                         self.say("%s : AIDE-MOI, SORCIER !" % c["name"], 12)
             else:
                 self.contact.pop(("cage", cid), None)
+
+        # stations de fabrication (creuset)
+        for cid, c in CRAFTS.items():
+            if c["room"] != self.room_id:
+                continue
+            if overlap(near, self.craft_rect(c)):
+                self._touch_craft(cid, c)
+            else:
+                self.contact.pop(("craft", cid), None)
+
+        # vortex (fin du chapitre)
+        gate = ROOMS[self.room_id].get("gate")
+        if gate:
+            if overlap(pr, gate_rect(gate)):
+                if self.carried == gate["key"]:
+                    self.items[self.carried] = None     # le Sceptre se brise dans le vortex
+                    self.carried = None
+                    self.chapter_bonus = self.time_seconds() * SCORE_TIME_PER_S
+                    self.score += self.chapter_bonus
+                    self.next_chapter = gate["to"]
+                    self.state = "chapter"
+                    self.timer = CHAPTER_SCREEN_TICKS
+                    self.audio.play("portal")
+                    return
+                if ("gate", 0) not in self.contact:
+                    self.contact[("gate", 0)] = True
+                    self.audio.play("denied")
+                    if self.carried and OBJECTS[self.carried]["kind"] == "relique":
+                        self.say("CETTE RELIQUE EST SANS EFFET !", 4)
+                    else:
+                        self.say("LE VORTEX EXIGE LA VRAIE RELIQUE", 4)
+            else:
+                self.contact.pop(("gate", 0), None)
 
         # chaudrons
         for c in ROOMS[self.room_id]["cauldrons"]:
@@ -325,7 +461,7 @@ class Game:
 
         # eau
         if self.room.rect_touches_kind(p.x, p.y + 1, p.w, p.h, WATER):
-            self._hurt(0.4)
+            self._hurt(0.7 if ROOMS[self.room_id]["lava"] else 0.4)
 
         # ennemis
         if self.grace:
@@ -348,9 +484,13 @@ class Game:
         b = self.boss
         if b and not self.boss_defeated:
             b.update(p, self.fireballs)
+            weapon = self.carried and OBJECTS[self.carried]["kind"] == BOSS_WEAPON_KIND
             if b.solid and overlap(pr, b.rect()):
-                if self.carried == FINAL_WEAPON and not b.invuln:
+                if weapon and not b.invuln:
                     b.hit()
+                    self.boss_hp = b.hp
+                    self.items[self.carried] = None      # le pentacle se brise sur lui
+                    self.carried = None
                     self.audio.play("boss_hit")
                     self.spark(b.x + b.w / 2, b.y + b.h / 2, 13, 25, 1.8)
                     if b.hp <= 0:
@@ -362,11 +502,11 @@ class Game:
                         self.say("LE NECROMANCIEN EST DETRUIT !", 11, 300)
                         self.audio.play("victory")
                         return
-                    self.say("LE NECROMANCIEN FAIBLIT ! (%d)" % b.hp, 11)
+                    self.say("LE PENTACLE SE BRISE : IL FAIBLIT ! (%d)" % b.hp, 11)
                 elif not b.invuln:
-                    if self.carried and OBJECTS[self.carried]["kind"] == "relique" and ("boss", 0) not in self.contact:
+                    if self.carried and ("boss", 0) not in self.contact:
                         self.contact[("boss", 0)] = True
-                        self.say("CETTE RELIQUE EST SANS EFFET !", 4)
+                        self.say("SEUL UN PENTACLE PEUT LE BLESSER !", 4)
                     self._hurt(0.5)
             else:
                 self.contact.pop(("boss", 0), None)

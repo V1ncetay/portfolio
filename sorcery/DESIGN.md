@@ -172,5 +172,8 @@ Les monstres réapparaissent à la re-entrée de l'écran [I]. Tué = disparaît
 1. **MVP** : Ch.1 seulement (~20-25 écrans écrits à la main, 8 captifs, 5 types de monstres, énergie, temps, objet unique).
 2. **v2** : étendre à ~47 écrans ; chaudrons ; passages cachés ; trappes.
 3. **v3** : Ch.2 (28 écrans) + boss Nécromancien + exigence de 3 reliques.
+   *État : implémenté* (voir README) : 37 écrans au Ch.1 (vortex final exigeant le Sceptre),
+   28 au Ch.2 (forêt maudite, chapelle, abîme de feu, citadelle, sanctuaire), 8 cœurs, objet triple =
+   pentacle (2 dans le monde + 1 forgé au creuset : cloche d'argent + éclat de lune) **[I]**.
 4. Avant de coder les tables §7-9, **valider contre un longplay réel** : toute la section est une proposition.
 5. Architecture : données de salle en JSON, moteur à tuiles 160x200, boucle fixe 25 Hz, rendu canvas pixel-perfect.

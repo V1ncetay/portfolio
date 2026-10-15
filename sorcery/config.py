@@ -15,6 +15,8 @@ TICK_HZ = 50                            # logique fixe 50 Hz
 TICK_S = 1.0 / TICK_HZ
 
 TIME_LIMIT_MIN = 30                     # compte à rebours global [I]
+TIME_LIMIT_CH2_MIN = 20                 # nouveau compte à rebours du Chapitre 2 [I]
+CHAPTER_SCREEN_TICKS = 500              # écran « CHAPITRE 2 » (10 s max, Espace pour passer)
 ENERGY_MAX = 100.0
 
 # Physique (px logiques par tick à 50 Hz) [I] : spec = 2/1/2 px par frame à 25 Hz.
@@ -28,6 +30,8 @@ SCORE_KILL = 100
 SCORE_FREE = 500
 SCORE_BOSS = 5000
 SCORE_TIME_PER_S = 10
+SCORE_HEART = 250
+SCORE_CRAFT = 500
 
 # Palette CPC : 16 encres choisies parmi les 27 couleurs matérielles.
 PALETTE = [
