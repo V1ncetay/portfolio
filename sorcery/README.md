@@ -3,7 +3,8 @@
 Recréation hommage de **Sorcery** (Virgin Games, 1985, version Amstrad CPC), en Python 3 + pygame.
 Tout est généré par le code : graphismes procéduraux au look CPC Mode 0 (160x200, 16 couleurs,
 pixels larges 2:1, mis à l'échelle en 960x600 avec scanlines), sons et musique synthétisés en ondes
-carrées. Aucun fichier d'asset, et rien n'est repris du jeu original (ni graphismes, ni mélodie).
+carrées. Aucun fichier d'asset, et rien n'est repris du jeu original (ni graphismes, ni arrangement
+musical : voir [Musique](#musique)).
 
 ![Titre](screenshots/01_titre.png)
 ![Salle de départ](screenshots/02_tour_depart.png)
@@ -16,7 +17,8 @@ python main.py
 ```
 
 Options : `--time 45` (temps limite en minutes, 30 par défaut), `--fullscreen`, `--mute`,
-`--no-scanlines`, `--solution` (affiche la solution calculée), `--selftest`, `--screenshots`.
+`--no-scanlines`, `--solution` (affiche la solution calculée), `--selftest`, `--screenshots`,
+`--export-music FICHIER.wav` (exporte le thème du titre en WAV).
 
 ## Construire l'exécutable Windows
 
@@ -26,6 +28,28 @@ Options : `--time 45` (temps limite en minutes, 30 par défaut), `--fullscreen`,
 - Sur GitHub : le workflow `.github/workflows/sorcery-windows.yml` (runner `windows-latest`) se
   déclenche à chaque push qui touche `sorcery/**`, ou à la main (*workflow_dispatch*). Il lance les
   tests et publie `Sorcery.exe` comme artefact `Sorcery-windows`.
+
+## Musique
+
+- **Titre** : le thème du balai de *L'apprenti sorcier* de **Paul Dukas** (1897). Dukas est mort
+  en 1935 : l'œuvre est dans le **domaine public**. C'est aussi cette pièce qu'utilise le Sorcery
+  original, mais l'arrangement CPC (Virgin, 1985) est protégé et **n'est pas repris** : la
+  mélodie est transcrite depuis la partition de Dukas (3/8, fa mineur) et l'arrangement 3 voix
+  façon AY-3-8912 (mélodie, basse staccato, arpèges, bruit) est propre à ce projet. Forme : exposé
+  du thème, reprise à l'octave, montée et cadence (~31 s, en boucle).
+- **Défaite** : variante lente et grave du début du thème, avec cadence finale (jouée une fois).
+- **En jeu** : petite boucle originale, à volume réduit. **F3** coupe ou rétablit la musique,
+  `--mute` coupe tout le son.
+- La partition est écrite en clair dans `music.py` (noms de notes et durées en croches, un accord
+  par mesure) pour pouvoir la corriger à l'oreille ; l'auto-test vérifie que chaque mesure fait
+  bien 3 croches.
+
+**Utiliser votre propre enregistrement** : si vous possédez le jeu original, vous pouvez placer
+votre propre enregistrement dans un dossier `music/` à côté de `main.py` (ou à côté de
+`Sorcery.exe`) : `music/title.ogg` (titre), `music/ingame.ogg` (en jeu) et, si vous le souhaitez,
+`music/gameover.ogg` (défaite). Les formats `.ogg`, `.wav` et `.mp3` sont acceptés. Ces fichiers
+remplacent alors la musique synthétisée correspondante. Aucun fichier de ce type n'est fourni
+avec le projet.
 
 ## Contrôles
 
@@ -145,14 +169,16 @@ reprend donc ses marqueurs [V] (vérifié) et [I] (inféré).
 ouvertes par des objets précis ; les monstres qui drainent l'énergie et ceux qu'un objet donné
 tue ; le chaudron qui rend l'énergie mais pas le temps ; le temps limite ; les sorciers captifs
 libérés chacun par un objet précis ; les passages cachés ; le Nécromancien tué par une seule
-relique parmi trois, à Stonehenge ; la musique d'intro sur 3 voix ; le look Mode 0 en 16 couleurs.
+relique parmi trois, à Stonehenge ; la musique d'intro sur 3 voix, sur le thème de
+*L'apprenti sorcier* de Dukas (arrangement propre au projet) ; le look Mode 0 en 16 couleurs.
 
 **Inventé / proposé [I]** : toute la carte (37 écrans, noms des salles et des zones), la position
 des objets, des captifs et des monstres, les noms des captifs, les affectations objet -> porte /
 captif / monstre, les valeurs physiques, de dégâts et de score, la durée de 30 min, la vie unique,
 le chaudron maudit, les cœurs, l'obscurité des catacombes, le comportement du boss
 (téléportations, boules de feu, 3 coups en clin d'œil à Sorcery+), le HUD, les écrans de titre,
-de victoire et de défaite, la mélodie (composition originale) et tous les graphismes.
+de victoire et de défaite, l'arrangement musical et la boucle de jeu (composition originale), et
+tous les graphismes.
 **Non implémenté** : le Chapitre 2 de Sorcery+ (28 écrans, collecte de cœurs). Le chapitre 1 est
 suivi directement de l'affrontement final.
 
@@ -176,6 +202,9 @@ L'auto-test vérifie les points suivants :
 - **Simulation** : 600 frames d'entrées scriptées avec rendu.
 - **Partie complète** : le plan du solveur est rejoué dans le vrai moteur, jusqu'à l'écran de
   victoire.
+- **Musique** : toutes les notes et tous les accords de la partition sont valides, chaque mesure
+  fait 3 croches (3/8), le thème dure entre 25 et 45 s, sans saturation ni silence ; F3 et
+  `--mute` coupent bien la musique.
 
 ## Structure
 
@@ -187,7 +216,8 @@ L'auto-test vérifie les points suivants :
 | `entities.py` | collisions, sorcier, ennemis, Nécromancien, projectiles |
 | `render.py` | rendu procédural (tuiles, décors, HUD, écrans) |
 | `sprites.py`, `font.py` | pixel art et police 5x7 originaux |
-| `audio.py` | synthèse des sons et de la musique en Python pur |
+| `audio.py` | synthèse des effets, boucle de jeu, musique par scène et fichiers de remplacement |
+| `music.py` | partition (Dukas) en texte et synthèse 3 voix façon AY-3-8912 |
 | `solver.py`, `selftest.py` | solveur BFS et tests headless |
 
 ## Limites connues

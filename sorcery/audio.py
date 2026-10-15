@@ -1,11 +1,18 @@
 """Sons et musique synthétisés en Python pur (ondes carrées façon AY-3-8912).
 
-Aucun fichier audio : les tampons 16 bits sont générés avec le module array
-puis passés à pygame.mixer.Sound(buffer=...). Mélodie originale (pas celle du jeu).
+Aucun fichier audio fourni : les tampons 16 bits sont générés avec le module array
+puis passés à pygame.mixer.Sound(buffer=...). Le thème du titre et de la défaite
+(Dukas, domaine public) est arrangé dans music.py ; la boucle de jeu ci-dessous est
+une mélodie originale. Remplacement facultatif par des fichiers de l'utilisateur :
+music/title.(ogg|wav|mp3), music/ingame.(...), music/gameover.(...) à côté de main.py
+ou de l'exécutable.
 """
 import array
-import math
+import os
 import random
+import sys
+
+import music
 
 RATE = 22050
 
@@ -91,7 +98,7 @@ def build_effects():
     return fx
 
 
-# Mélodie originale en la mineur, 8 mesures de 8 croches (0 = silence).
+# Boucle de jeu (discrète) : mélodie originale en la mineur, 8 mesures de 8 croches (0 = silence).
 TUNE_MELODY = [
     69, 72, 76, 72, 81, 79, 76, 72,
     77, 76, 72, 69, 72, 76, 77, 79,
@@ -137,16 +144,47 @@ def to_bytes(samples, channels=1):
     return out.tobytes()
 
 
+MUSIC_EXTS = (".ogg", ".wav", ".mp3")
+TRACK_VOLUME = {"title": 1.0, "over": 1.0, "ingame": 0.35}
+OVERRIDE_NAMES = {"title": "title", "ingame": "ingame", "over": "gameover"}
+
+
+def music_dirs():
+    """Dossiers « music/ » où chercher les fichiers de remplacement."""
+    dirs = []
+    if getattr(sys, "frozen", False):
+        dirs.append(os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "music"))
+    dirs.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "music"))
+    return dirs
+
+
+def find_override(track):
+    base = OVERRIDE_NAMES.get(track, track)
+    for d in music_dirs():
+        for ext in MUSIC_EXTS:
+            p = os.path.join(d, base + ext)
+            if os.path.isfile(p):
+                return p
+    return None
+
+
 class Audio:
+    """Effets + musique par scène. play_music(piste) choisit la piste de la scène ;
+    toggle_music() (F3) coupe/rétablit la musique sans oublier la piste courante."""
+
     def __init__(self, enabled=True):
         self.ok = False
         self.sounds = {}
-        self.music = None
+        self.tracks = {}
+        self.overrides = {}
+        self.music_enabled = True
+        self.current = None          # (piste, boucles) de la scène courante
         self.music_on = False
         if not enabled:
             return
         try:
             import pygame
+            self.pg = pygame
             if not pygame.mixer.get_init():
                 pygame.mixer.init(RATE, -16, 1, 512)
             freq, size, channels = pygame.mixer.get_init()
@@ -157,7 +195,14 @@ class Audio:
             self.channels = channels
             for name, samples in build_effects().items():
                 self.sounds[name] = pygame.mixer.Sound(buffer=to_bytes(samples, channels))
-            self.music = pygame.mixer.Sound(buffer=to_bytes(build_tune(), channels))
+            for name, builder in (("title", music.build_title), ("over", music.build_over),
+                                  ("ingame", build_tune)):
+                path = find_override(name)
+                if path:
+                    self.overrides[name] = path
+                else:
+                    self.tracks[name] = pygame.mixer.Sound(buffer=to_bytes(builder(), channels))
+            self.music = self.tracks.get("title")
             pygame.mixer.set_reserved(1)
             self.music_channel = pygame.mixer.Channel(0)
             self.ok = True
@@ -171,12 +216,56 @@ class Audio:
             except Exception:
                 pass
 
-    def music_start(self):
-        if self.ok and not self.music_on:
-            self.music_channel.play(self.music, loops=-1)
+    def play_music(self, track, loops=-1):
+        """Musique de la scène (title, ingame, over). Relance si la piste change."""
+        if self.current == (track, loops) and self.music_on:
+            return
+        self._halt()
+        self.current = (track, loops)
+        if self.music_enabled:
+            self._start()
+
+    def _start(self):
+        if not self.ok or self.current is None:
+            return
+        track, loops = self.current
+        vol = TRACK_VOLUME.get(track, 1.0)
+        try:
+            if track in self.overrides:
+                self.pg.mixer.music.load(self.overrides[track])
+                self.pg.mixer.music.set_volume(vol)
+                self.pg.mixer.music.play(loops)
+            elif track in self.tracks:
+                self.music_channel.set_volume(vol)
+                self.music_channel.play(self.tracks[track], loops=loops)
+            else:
+                return
             self.music_on = True
+        except Exception:
+            self.music_on = False
+
+    def _halt(self):
+        if self.ok and self.music_on:
+            try:
+                self.music_channel.stop()
+                self.pg.mixer.music.stop()
+            except Exception:
+                pass
+        self.music_on = False
 
     def music_stop(self):
-        if self.ok and self.music_on:
-            self.music_channel.stop()
-            self.music_on = False
+        """Plus de musique pour la scène courante (ex. victoire)."""
+        self._halt()
+        self.current = None
+
+    def music_start(self):
+        """Compatibilité : musique du titre."""
+        self.play_music("title")
+
+    def toggle_music(self):
+        self.music_enabled = not self.music_enabled
+        if self.music_enabled:
+            self._start()
+        else:
+            self._halt()
+        return self.music_enabled

@@ -355,6 +355,37 @@ def check_mechanics(rep):
     rep.check(not e.alive and g.score >= 100, "l'épée ne tue pas le crâne")
 
 
+def check_music(rep):
+    import music
+    from audio import Audio
+    for e in music.check_scores():
+        rep.check(False, "musique : " + e)
+    n = 0
+    for key, (text, chords) in music.SCORES.items():
+        bars = music.parse_bars(text)
+        n += len(bars)
+        rep.check(all(sum(d for _, d in b) == music.BAR_EIGHTHS for b in bars), "musique : %s pas en 3/8" % key)
+    title = music.build_title()
+    st = music.stats(title)
+    rep.check(25.0 <= st["duration"] <= 45.0, "musique : durée du titre %.1f s" % st["duration"])
+    rep.check(st["peak"] < 1.0, "musique : saturation (crête %.2f)" % st["peak"])
+    rep.check(st["rms"] > 0.02, "musique : thème silencieux")
+    a = Audio()
+    rep.check(not a.ok or {"title", "over", "ingame"} <= set(a.tracks) | set(a.overrides),
+              "musique : pistes manquantes")
+    a.play_music("title")
+    on = a.toggle_music()
+    rep.check(not on and not a.music_on, "musique : F3 ne coupe pas")
+    a.toggle_music()
+    rep.check(not a.ok or a.music_on, "musique : F3 ne relance pas")
+    a.music_stop()
+    muted = Audio(enabled=False)
+    muted.play_music("title")
+    rep.check(not muted.music_on, "musique : --mute ne coupe pas")
+    print("[audio] mixer=%s, %d effets, %d mesures de partition, titre %.1f s (crête %.2f)"
+          % (a.ok, len(a.sounds), n, st["duration"], st["peak"]))
+
+
 def run():
     t0 = time.time()
     import pygame
@@ -378,9 +409,7 @@ def run():
     print("[simulation] %d frames scriptées sans plantage, salles visitées : %s" % (n, ",".join(sorted(visited))))
     g = playthrough(rep)
     print("[partie complète] état=%s, libérés=%d, score=%d" % (g.state, len(g.freed), g.score))
-    from audio import Audio
-    a = Audio()
-    print("[audio] mixer=%s, %d effets" % (a.ok, len(a.sounds)))
+    check_music(rep)
     print("%d vérifications OK, %d erreurs (%.1fs)" % (rep.passed, len(rep.errors), time.time() - t0))
     for e in rep.errors:
         print("  ERREUR:", e)

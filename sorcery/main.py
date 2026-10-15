@@ -4,6 +4,7 @@
     python main.py --selftest    tests headless (données, BFS, simulation)
     python main.py --screenshots génère des captures dans screenshots/
     python main.py --solution    affiche la solution calculée par le solveur
+    python main.py --export-music F.wav  exporte le thème du titre en WAV
 Options : --time MIN (durée), --fullscreen, --mute, --no-scanlines
 """
 import argparse
@@ -54,7 +55,7 @@ class App:
             self.joy = None
         if fullscreen:
             self.toggle_fullscreen()
-        self.audio.music_start()
+        self.audio.play_music("title")
 
     # ------------------------------------------------------------------ entrées
     def toggle_fullscreen(self):
@@ -74,10 +75,7 @@ class App:
                 elif ev.key == pygame.K_F2:
                     self.renderer.scanlines = not self.renderer.scanlines
                 elif ev.key == pygame.K_F3:
-                    if self.audio.music_on:
-                        self.audio.music_stop()
-                    elif self.scene == "title":
-                        self.audio.music_start()
+                    self.audio.toggle_music()
                 elif ev.key == pygame.K_ESCAPE:
                     self.keys_edge.add("esc")
                 elif ev.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_LCTRL, pygame.K_RCTRL):
@@ -117,8 +115,8 @@ class App:
     # ------------------------------------------------------------------ scènes
     def new_game(self):
         self.game = Game(audio=self.audio, time_limit_min=self.time_min)
-        self.audio.music_stop()
         self.audio.play("start")
+        self.audio.play_music("ingame")
         self.scene = "play"
         self.scene_t = 0
 
@@ -127,7 +125,7 @@ class App:
             self.hiscore = max(self.hiscore, self.game.score)
         self.scene = "title"
         self.scene_t = 0
-        self.audio.music_start()
+        self.audio.play_music("title")
 
     def step(self, inp, edges):
         """Un tick logique (50 Hz). edges = ensemble {'action', 'esc'}."""
@@ -145,9 +143,11 @@ class App:
             self.game.update(inp)
             if self.game.state == "lost":
                 self.scene, self.scene_t = "over", 0
+                self.audio.play_music("over", loops=0)
                 self.hiscore = max(self.hiscore, self.game.score)
             elif self.game.state == "won":
                 self.scene, self.scene_t = "victory", 0
+                self.audio.music_stop()
                 self.hiscore = max(self.hiscore, self.game.score)
         elif self.scene == "pause":
             if "action" in edges:
@@ -198,7 +198,15 @@ def main(argv=None):
     ap.add_argument("--fullscreen", action="store_true")
     ap.add_argument("--mute", action="store_true")
     ap.add_argument("--no-scanlines", action="store_true")
+    ap.add_argument("--export-music", metavar="WAV", help="exporte le thème du titre en WAV")
     args = ap.parse_args(argv)
+    if args.export_music:
+        import music
+        samples = music.build_title()
+        music.write_wav(args.export_music, samples)
+        st = music.stats(samples)
+        print("%s : %.1f s, crête %.2f, RMS %.3f" % (args.export_music, st["duration"], st["peak"], st["rms"]))
+        return 0
     if args.selftest or args.screenshots:
         os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
         os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
