@@ -1,0 +1,2 @@
+# Moteur : pygame (si l'installation échoue, utiliser pygame-ce : pip install pygame-ce)
+pygame>=2.5

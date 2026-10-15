@@ -1,0 +1,78 @@
+name: Sorcery - build Windows
+
+on:
+  push:
+    paths:
+      - "sorcery/**"
+      - ".github/workflows/sorcery-windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: sorcery
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          if ($LASTEXITCODE -ne 0) { python -m pip install pygame-ce }
+          python -m pip install pyinstaller
+
+      - name: Tests headless
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: python main.py --selftest
+
+      - name: Construire Sorcery.exe
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name Sorcery --hidden-import selftest --hidden-import solver main.py
+
+      - name: Lancer Sorcery.exe (autotest + captures)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\Sorcery.exe -ArgumentList '--selftest','--screenshots',"$PWD\exe-shots" -Wait -PassThru
+          Write-Host "Code de sortie selftest exe : $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { exit 1 }
+          $n = (Get-ChildItem exe-shots -Filter *.png).Count
+          Write-Host "Captures générées par l'exe : $n"
+          if ($n -lt 1) { exit 1 }
+
+      - name: Lancer Sorcery.exe (fenêtre réelle, 15 s)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\Sorcery.exe -ArgumentList '--mute' -PassThru
+          Start-Sleep -Seconds 15
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          New-Item -ItemType Directory -Force exe-shots | Out-Null
+          $bmp.Save("$PWD\exe-shots\bureau_windows.png")
+          if ($p.HasExited) { Write-Host "L'exe s'est arrêté (code $($p.ExitCode))"; exit 1 }
+          Write-Host "Sorcery.exe tourne toujours après 15 s (PID $($p.Id))"
+          Stop-Process -Id $p.Id -Force
+
+      - name: Publier l'artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sorcery-windows
+          path: sorcery/dist/Sorcery.exe
+          if-no-files-found: error
+
+      - name: Publier les captures de l'exe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sorcery-exe-captures
+          path: sorcery/exe-shots/
+          if-no-files-found: warn
