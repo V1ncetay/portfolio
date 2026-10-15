@@ -12,8 +12,8 @@ from config import (PALETTE, LOGICAL_W, LOGICAL_H, TEXT_W, TEXT_H, WINDOW_W, WIN
                     COLS, ROWS, PLAY_W, PLAY_H, HUD_Y, ENERGY_MAX, TIME_LIMIT_MIN)
 import font
 import sprites
-from world import (ROOMS, OBJECTS, DOORS, CAPTIVES, ZONES, SOLID, FAKE, WATER, zone_theme,
-                   doors_in_room, opening_cells)
+from world import (ROOMS, OBJECTS, DOORS, CAPTIVES, ZONES, SOLID, FAKE, WATER, HEARTS, CRAFTS,
+                   LIGHT_ITEMS, BOSS_HITS, zone_theme, doors_in_room, opening_cells, gate_rect)
 from game import ITEM_W, ITEM_H, CAGE_W, CAGE_H, CAULDRON_W, CAULDRON_H
 
 P = PALETTE
@@ -142,6 +142,70 @@ def paint_tile(theme, cx, cy, top, seed=0):
             for x in range(8):
                 px(x, 0, 7 if (x + cx) % 2 else 6)
                 px(x, 1, 6)
+    elif theme == "foret":           # forêt maudite : terre bleu nuit, racines mauves
+        s.fill(P[1])
+        for i in range(4):
+            r = _h(hv, i)
+            px(r % 8, (r >> 3) % 8, 0)
+        x = hv % 8
+        for y in range(8):
+            if (hv >> y) & 1:
+                px(x, y, 5)
+            x = (x + 1) % 8
+        if top:
+            for x in range(8):
+                px(x, 0, 6)
+                px(x, 1, 6 if (x + cx) % 3 else 1)
+            if hv % 4 == 0:
+                px((hv >> 3) % 8, 0, 9)            # champignon luminescent
+    elif theme == "chapelle":        # grès rose de la chapelle, mousse sur les ruines
+        s.fill(P[8])
+        off = 0 if cy % 2 == 0 else 4
+        for x in range(8):
+            px(x, 7, 3)
+        for y in range(7):
+            px(off, y, 3)
+        px((off + 1) % 8, 0, 15)
+        px((off + 2) % 8, 0, 15)
+        if hv % 3 == 0:
+            ty = (hv >> 4) % 5 + 1
+            px((off + 5) % 8, ty, 3)
+            px((off + 6) % 8, ty + 1, 3)
+        if top:
+            for x in range(8):
+                px(x, 0, 7 if (x + hv) % 4 == 0 else 6)
+                if (x * 3 + cx) % 4 == 0:
+                    px(x, 1, 6)
+    elif theme == "lave":            # basalte bleu-noir veiné de braise
+        s.fill(P[1])
+        for i in range(5):
+            r = _h(hv, i)
+            px(r % 8, (r >> 3) % 8, 0 if i < 3 else 14)
+        x = hv % 8
+        for y in range(8):
+            if (hv >> (y + 3)) & 1:
+                px(x, y, 3)
+            x = (x + (1 if (hv >> y) & 1 else -1)) % 8
+        px((hv >> 9) % 8, (hv >> 12) % 8, 12)
+        if top:
+            for x in range(8):
+                px(x, 0, 12 if (x + cx) % 3 else 4)
+                px(x, 1, 3 if (x + cx) % 2 else 0)
+    elif theme == "citadelle":       # briques mauves de la citadelle
+        s.fill(P[5])
+        off = 0 if cy % 2 == 0 else 4
+        for x in range(8):
+            px(x, 3, 0)
+            px(x, 7, 0)
+        for y in range(3):
+            px(off % 8, y, 0)
+            px((off + 4) % 8, y + 4, 0)
+        px((off + 1) % 8, 0, 13)
+        px((off + 5) % 8, 4, 13)
+        if top:
+            for x in range(8):
+                px(x, 0, 13)
+                px(x, 1, 15 if x % 4 == 0 else 13)
     else:  # antre
         s.fill(P[3])
         x = hv % 8
@@ -202,7 +266,9 @@ class Renderer:
         S["necro_white"] = silhouette(S["necro0"], 15)
         for name, frames in (("skull", sprites.SKULL), ("ghost", sprites.GHOST), ("bat", sprites.BAT),
                              ("spider", sprites.SPIDER), ("fish", sprites.FISH), ("guard", sprites.GUARD),
-                             ("fireball", sprites.FIREBALL), ("cauldron", sprites.CAULDRON)):
+                             ("fireball", sprites.FIREBALL), ("cauldron", sprites.CAULDRON),
+                             ("goule", sprites.GOULE), ("wisp", sprites.WISP),
+                             ("gargouille", sprites.GARGOUILLE), ("bulle", sprites.BULLE)):
             for i, a in enumerate(frames):
                 both("%s%d" % (name, i), a)
         for i, a in enumerate(sprites.CAULDRON):
@@ -214,11 +280,20 @@ class Renderer:
             S["item_" + oid] = art_surface(rows)
         S["free_on"] = art_surface(sprites.FREE_ICON)
         S["free_off"] = art_surface(sprites.FREE_ICON, {6: 14, 8: 14, 15: 14})
+        S["heart_on"] = art_surface(sprites.HEART_ICON)
+        S["heart_off"] = art_surface(sprites.HEART_ICON, {13: 14, 11: 0})
+        S["pent_on"] = art_surface(sprites.PENTACLE)
+        S["pent_off"] = art_surface(sprites.PENTACLE, {13: 1, 11: 1})
+        for c in CRAFTS.values():           # icônes de recette au-dessus du creuset
+            for n in c["needs"]:
+                small = pygame.transform.scale(S["item_" + OBJECTS[n].get("sprite", n)], (5, 7))
+                S["need_" + n] = small
+                S["need_dim_" + n] = silhouette(small, 1)
         self.spr = S
 
     def item_sprite(self, oid):
-        kind = OBJECTS[oid]["kind"]
-        return self.spr["item_potion" if kind == "potion" else "item_" + oid]
+        o = OBJECTS[oid]
+        return self.spr["item_potion" if o["kind"] == "potion" else "item_" + o.get("sprite", oid)]
 
     def _build_dark_mask(self):
         w, h = PLAY_W * 2, PLAY_H * 2
@@ -372,6 +447,88 @@ class Renderer:
                     pygame.draw.line(s, P[0], (px_ + 4, 96), (px_ + 4, 143))
                 pygame.draw.rect(s, P[14], (x0 - 2, 90, 23, 6))
                 pygame.draw.line(s, P[15], (x0 - 2, 90), (x0 + 20, 90))
+        elif theme == "foret":
+            s.fill(P[0])
+            dither((0, 0, PLAY_W, 18), 1, 0)
+            for _ in range(18):
+                s.set_at((rng.randrange(8, 152), rng.randrange(18, 70)), P[rng.choice((15, 9, 14))])
+            mx, my = rng.randrange(30, 130), rng.randrange(18, 34)
+            pygame.draw.ellipse(s, P[1], (mx - 9, my - 13, 18, 26))
+            pygame.draw.ellipse(s, P[15], (mx - 6, my - 10, 12, 20))
+            for dx, dy in ((-2, -3), (2, 2), (-1, 5)):
+                s.set_at((mx + dx, my + dy), P[14])
+            # arbres morts lointains
+            for _ in range(5):
+                x = rng.randrange(4, 150)
+                top = rng.randrange(40, 80)
+                pygame.draw.rect(s, P[1], (x, top, 3, PLAY_H - top))
+                for k in range(3):
+                    by = top + rng.randrange(0, 30)
+                    d = rng.choice((-1, 1))
+                    pygame.draw.line(s, P[1], (x + 1, by), (x + 1 + d * rng.randrange(5, 12), by - rng.randrange(4, 10)))
+            # brume
+            for y in range(118, PLAY_H, 2):
+                for x in range(PLAY_W):
+                    if (x + 2 * math.sin(y * 0.7) * 3 + y * 5) % 9 < 1 and (x // 12 + y // 6) % 3:
+                        s.set_at((x, y), P[5])
+            for _ in range(6):
+                s.set_at((rng.randrange(10, 150), rng.randrange(60, 130)), P[rng.choice((11, 7))])
+        elif theme == "chapelle":
+            s.fill(P[0])
+            dither((0, 0, PLAY_W, 26), 5, 1)
+            dither((0, 26, PLAY_W, 18), 1, 0)
+            for _ in range(14):
+                s.set_at((rng.randrange(8, 152), rng.randrange(30, 80)), P[rng.choice((15, 14))])
+            # colonnade en ruine (piliers brisés, arcs)
+            cols_x = list(range(6, PLAY_W, 37))
+            tops = [rng.randrange(18, 70) for _ in cols_x]
+            for i, (x0, top) in enumerate(zip(cols_x, tops)):
+                if i + 1 < len(cols_x) and max(top, tops[i + 1]) < 40:
+                    x1 = cols_x[i + 1]
+                    pygame.draw.arc(s, P[3], (x0, top - 6, x1 - x0 + 8, 40), 0, math.pi, 4)
+                pygame.draw.rect(s, P[3], (x0, top, 8, PLAY_H - top))
+                pygame.draw.line(s, P[8], (x0, top), (x0, PLAY_H))
+                pygame.draw.line(s, P[0], (x0 + 7, top), (x0 + 7, PLAY_H))
+                for k in range(3):
+                    s.set_at((x0 + rng.randrange(0, 8), top + k), P[0])
+            for _ in range(8):                         # gravats
+                x = rng.randrange(8, 150)
+                pygame.draw.rect(s, P[3], (x, PLAY_H - 12 - rng.randrange(0, 4), rng.randrange(3, 7), 3))
+        elif theme == "lave":
+            s.fill(P[0])
+            for y in range(84, PLAY_H):
+                for x in range(PLAY_W):
+                    if (y > 128 and (x + y) % 2 == 0) or (y > 112 and (x + y) % 4 == 0 and y % 2 == 0) \
+                            or (x * 7 + y * 3) % 37 == 0:
+                        s.set_at((x, y), P[3])
+            # rivière de lave lointaine
+            for x in range(PLAY_W):
+                yy = 104 + int(2 * math.sin(x * 0.12))
+                s.set_at((x, yy), P[3])
+                if (x + yy) % 3 == 0:
+                    s.set_at((x, yy + 1), P[12] if x % 2 else P[4])
+            # stalactites
+            for _ in range(9):
+                x = rng.randrange(6, 150)
+                h = rng.randrange(8, 26)
+                pygame.draw.polygon(s, P[1], [(x - 4, 0), (x + 4, 0), (x, h)])
+                s.set_at((x, h - 1), P[3])
+            for _ in range(16):
+                s.set_at((rng.randrange(8, 152), rng.randrange(20, 100)), P[rng.choice((12, 4, 11))])
+        elif theme == "citadelle":
+            s.fill(P[0])
+            for y in range(0, PLAY_H, 12):
+                off = 0 if (y // 12) % 2 == 0 else 10
+                for x in range(0, PLAY_W):
+                    if x % 2 == 0:
+                        s.set_at((x, y), P[1])
+                for x in range(off, PLAY_W, 20):
+                    for yy in range(y, y + 12, 2):
+                        s.set_at((x, yy), P[1])
+            for _ in range(10):
+                x, y = rng.randrange(10, 150), rng.randrange(10, 130)
+                s.set_at((x, y), P[5])
+                s.set_at((x + 1, y), P[5])
         else:  # antre
             s.fill(P[0])
             for y in range(PLAY_H):
@@ -419,6 +576,64 @@ class Renderer:
             pygame.draw.rect(s, P[11], (x - 1, y, 10, 2))
             pygame.draw.rect(s, P[11], (x + 3, y + 7, 2, 6))
             pygame.draw.rect(s, P[11], (x + 1, y + 9, 6, 2))
+        elif kind == "deadtree":
+            base = PLAY_H - 8
+            pygame.draw.rect(s, P[1], (x, y, 4, base - y))
+            pygame.draw.line(s, P[5], (x + 3, y + 2), (x + 3, base - 1))
+            for k, (dx, dy, l) in enumerate(((-1, -1, 9), (1, -1, 8), (-1, -1, 6), (1, -1, 5))):
+                by = y + 4 + k * 7
+                if by >= base - 6:
+                    break
+                ex = x + 1 + dx * l + (3 if dx > 0 else 0)
+                pygame.draw.line(s, P[1], (x + (3 if dx > 0 else 0), by), (ex, by + dy * l // 2))
+                pygame.draw.line(s, P[1], (ex, by + dy * l // 2), (ex + dx * 2, by + dy * l // 2 - 3))
+            s.set_at((x + 1, y + 10), P[0])          # creux du tronc
+            s.set_at((x + 2, y + 10), P[11])         # œil qui luit
+        elif kind == "cross":
+            pygame.draw.rect(s, P[14], (x + 2, y, 3, 16))
+            pygame.draw.rect(s, P[14], (x, y + 3, 7, 3))
+            pygame.draw.line(s, P[15], (x + 2, y), (x + 2, y + 15))
+            pygame.draw.rect(s, P[1], (x - 1, y + 14, 9, 2))
+        elif kind == "citadel_far":
+            for (dx, w, h) in ((0, 6, 26), (6, 14, 16), (20, 6, 30), (26, 10, 18)):
+                pygame.draw.rect(s, P[5], (x + dx, y + 40 - h, w, h + 60))
+                for i in range(0, w, 3):
+                    pygame.draw.rect(s, P[5], (x + dx + i, y + 38 - h, 2, 2))
+            for (wx, wy) in ((2, 20), (22, 16), (23, 26), (29, 30)):
+                s.set_at((x + wx, y + wy), P[7])
+        elif kind == "vitrail":
+            pygame.draw.rect(s, P[0], (x - 1, y - 5, 12, 25))
+            pygame.draw.ellipse(s, P[0], (x - 1, y - 10, 12, 12))
+            cols = (4, 11, 2, 7, 13, 9)
+            for yy in range(y - 4, y + 19):
+                for xx in range(x, x + 10):
+                    inside = yy >= y or (xx - x - 4.5) ** 2 / 25 + (yy - y) ** 2 / 25 < 1
+                    if not inside:
+                        continue
+                    if (xx - x) % 5 == 4 or (yy - y) % 6 == 5:
+                        s.set_at((xx, yy), P[14])        # plomb
+                    elif _h(xx // 5, yy // 6, x) % 5:       # quelques vitres brisées
+                        s.set_at((xx, yy), P[cols[_h(xx // 5, yy // 6) % len(cols)]])
+        elif kind == "anvil":
+            pygame.draw.rect(s, P[14], (x, y + 8, 14, 3))
+            pygame.draw.polygon(s, P[14], [(x - 3, y + 8), (x + 2, y + 11), (x + 2, y + 8)])
+            pygame.draw.rect(s, P[1], (x + 4, y + 11, 6, 4))
+            pygame.draw.rect(s, P[14], (x + 2, y + 15, 10, 1))
+            pygame.draw.line(s, P[15], (x, y + 8), (x + 13, y + 8))
+        elif kind == "bones":
+            for i, (dx, dy) in enumerate(((0, 6), (5, 5), (2, 3), (8, 6), (10, 4))):
+                c = P[15] if i % 2 else P[14]
+                pygame.draw.line(s, c, (x + dx, y + dy), (x + dx + 4, y + dy + (1 if i % 3 else -1)))
+            s.blit(self.spr["skull0"], (x + 3, y - 1))
+        elif kind == "pentagram":
+            cx, cy, ry = x, y + 22, 22
+            rx = ry // 2 + 4
+            pts = []
+            for k in range(5):
+                a = -math.pi / 2 + k * 4 * math.pi / 5
+                pts.append((cx + rx * math.cos(a), cy + ry * math.sin(a)))
+            pygame.draw.ellipse(s, P[3], (cx - rx - 2, cy - ry - 2, 2 * rx + 4, 2 * ry + 4), 1)
+            pygame.draw.lines(s, P[3], True, pts)
         elif kind == "altar":
             pygame.draw.rect(s, P[14], (x, y + 4, 40, 12))
             pygame.draw.rect(s, P[15], (x, y + 4, 40, 2))
@@ -445,12 +660,30 @@ class Renderer:
                 b.set_at((x + 1 + (f == 1), y + 1), P[11])
                 pygame.draw.rect(b, P[12], (x, y + 2, 4, 2))
                 b.set_at((x + 1 + f % 2, y + 3), P[4])
-        # eau animée
+            elif d[0] == "gflame":                       # flamme verte de la citadelle
+                x, y = d[1] * TILE, d[2] * TILE
+                pygame.draw.rect(b, P[14], (x, y + 5, 4, 2))
+                pygame.draw.rect(b, P[1], (x + 1, y + 7, 2, 5))
+                f = (tick // 5) % 3
+                pygame.draw.rect(b, P[6], (x, y + 2, 4, 3))
+                b.set_at((x + 1 + (f == 1), y), P[7])
+                b.set_at((x + 1 + f % 2, y + 1), P[7])
+                b.set_at((x + 2 - (f == 2), y + 3), P[15])
+            elif d[0] == "lavafall":                     # coulée de lave animée
+                x, y = d[1] * TILE, d[2] * TILE
+                for yy in range(y, PLAY_H - TILE):
+                    for xx in range(x, x + 5):
+                        v = (yy - tick // 2 + (xx - x) * 3) % 9
+                        b.set_at((xx, yy), P[(4, 4, 12, 4, 3, 12, 11, 4, 3)[v]])
+            elif d[0] == "vortex_bas":                   # le vortex d'arrivée, refermé au ciel
+                self._vortex(b, d[1] * TILE, d[2] * TILE + 10, 7, 10, tick, faint=True)
+        # eau / lave animée
         if room["water"]:
+            liquid = self._lava if room["lava"] else self._water
             for cy in range(ROWS):
                 for cx in range(COLS):
                     if g.tiles[rid][cy][cx] == WATER:
-                        self._water(b, cx, cy, tick, g.tiles[rid])
+                        liquid(b, cx, cy, tick, g.tiles[rid])
         # portes
         for did, direction in doors_in_room(rid):
             if did not in g.doors_open:
@@ -461,6 +694,14 @@ class Renderer:
             r = g.cauldron_rect(c)
             name = "cauldron%d" if c[2] == "plein" else "cauldron_m%d"
             b.blit(self.spr[name % ((tick // 10) % 2)], (r[0], r[1]))
+        # vortex de fin de chapitre
+        if room.get("gate"):
+            x, y, w, h = gate_rect(room["gate"])
+            self._vortex(b, x + w // 2, y + h // 2, w // 2 - 3, h // 2, tick)
+        # stations de fabrication (creuset)
+        for cid, c in CRAFTS.items():
+            if c["room"] == rid:
+                self._creuset(b, g, cid, c, tick)
         # captifs
         for cid, c in CAPTIVES.items():
             if c["room"] == rid and cid not in g.freed:
@@ -469,7 +710,7 @@ class Renderer:
         for oid, it in g.items_here():
             sp = self.item_sprite(oid)
             y = it["y"]
-            if OBJECTS[oid]["kind"] == "potion":
+            if OBJECTS[oid]["kind"] in ("potion", "coeur"):
                 y += (tick // 12) % 2
             b.blit(sp, (int(it["x"]), int(y)))
         # ennemis
@@ -478,12 +719,13 @@ class Renderer:
                 continue
             if e.kind == "spider":
                 pygame.draw.line(b, P[14], (int(e.x) + 3, e.thread_top), (int(e.x) + 3, int(e.y)))
-            frames = 2 if e.kind not in ("fish",) else 1
-            fr = (tick // (6 if e.kind == "bat" else 12) + id(e) % 2) % frames
+            frames = 2 if ("%s1" % e.kind) in self.spr else 1
+            fast = e.kind in ("bat", "wisp") or (e.kind == "gargouille" and getattr(e, "state", "") != "perch")
+            fr = (tick // (6 if fast else 12) + id(e) % 2) % frames
             name = "%s%d" % (e.kind, fr)
-            if e.vx < 0 and e.kind in ("skull", "guard", "fish", "ghost"):
+            if e.vx < 0 and e.kind in ("skull", "guard", "fish", "ghost", "goule", "gargouille"):
                 name += "_l"
-            if e.kind == "fish" and e.vy > 0:
+            if e.kind in ("fish", "bulle") and e.vy > 0:
                 sp = pygame.transform.flip(self.spr[name], False, True)
             else:
                 sp = self.spr[name]
@@ -494,6 +736,8 @@ class Renderer:
         bo = g.boss
         if bo and not bo.dead:
             self._boss(b, bo, tick)
+            for i in range(BOSS_HITS):                    # pentacles encore nécessaires
+                b.blit(self.spr["pent_on" if i < g.boss_hp else "pent_off"], (PLAY_W - 10 - i * 9, 1))
         for fb in g.fireballs:
             b.blit(self.spr["fireball%d" % ((fb.t // 4) % 2)], (int(fb.x), int(fb.y)))
         # sorciers libérés qui s'envolent
@@ -507,7 +751,7 @@ class Renderer:
             if 0 <= pt[0] < PLAY_W and 0 <= pt[1] < PLAY_H:
                 b.set_at((int(pt[0]), int(pt[1])), P[pt[5] if pt[4] > 8 else 14])
         # obscurité
-        if room["dark"] and g.carried != "torche":
+        if room["dark"] and g.carried not in LIGHT_ITEMS:
             cx, cy = g.player.center()
             b.blit(self.dark, (int(cx) - PLAY_W, int(cy) - PLAY_H))
         b.set_clip(None)
@@ -525,6 +769,64 @@ class Renderer:
             else:
                 if (x + i + y + tick // 10) % 6 == 0:
                     b.set_at((x + i, y + 2 + (i % 4)), P[2])
+
+    def _lava(self, b, cx, cy, tick, tiles):
+        x, y = cx * TILE, cy * TILE
+        pygame.draw.rect(b, P[3], (x, y, TILE, TILE))
+        surface = cy == 0 or tiles[cy - 1][cx] != WATER
+        for i in range(TILE):
+            ph = (x + i + tick // 8) % 10
+            if surface:
+                b.set_at((x + i, y + (1 if ph < 5 else 0)), P[11 if ph in (0, 1) else 12])
+                b.set_at((x + i, y + 2 + (ph // 5)), P[4])
+            elif (x * 3 + i + y + tick // 12) % 7 == 0:
+                b.set_at((x + i, y + 2 + (i % 4)), P[4])
+        if surface and _h(cx, tick // 20) % 13 == 0:      # bulle qui éclate
+            b.set_at((x + 3, y - 1), P[12])
+
+    def _vortex(self, b, cx, cy, rx, ry, tick, faint=False):
+        """Tourbillon : disque sombre et trois bras spiraux qui tournent."""
+        if not faint:
+            pygame.draw.ellipse(b, P[1], (cx - rx, cy - ry, 2 * rx, 2 * ry))
+            pygame.draw.ellipse(b, P[5], (cx - rx, cy - ry, 2 * rx, 2 * ry), 1)
+        cols = (15, 13, 9, 5) if not faint else (5, 1, 5, 1)
+        n = 22
+        for arm in range(3):
+            for k in range(n):
+                t = (k + 1) / n
+                a = arm * 2 * math.pi / 3 + t * 4.2 - tick * 0.09
+                px_ = int(cx + math.cos(a) * rx * t)
+                py_ = int(cy + math.sin(a) * ry * t)
+                if 0 <= px_ < PLAY_W and 0 <= py_ < PLAY_H:
+                    b.set_at((px_, py_), P[cols[(k + tick // 3) % 4]])
+        if not faint and (tick // 4) % 2:
+            b.set_at((cx, cy), P[15])
+
+    def _creuset(self, b, g, cid, c, tick):
+        x, y, w, h = [int(v) for v in g.craft_rect(c)]
+        inside = g.craft_in[cid]
+        done = c["makes"] in g.crafted
+        # feu sous le creuset
+        for i in range(2, w - 2):
+            f = (i * 5 + tick // 3) % 7
+            b.set_at((x + i, y + h - 1 - (f % 2)), P[(4, 12, 11, 4, 12, 3, 4)[f]])
+        # cuve
+        pygame.draw.rect(b, P[14], (x + 1, y + 2, w - 2, h - 4))
+        pygame.draw.rect(b, P[0], (x + 3, y + 4, w - 6, h - 7))
+        pygame.draw.line(b, P[15], (x, y + 2), (x + w - 1, y + 2))
+        pygame.draw.line(b, P[14], (x + 3, y + h - 2), (x + 3, y + h - 1))
+        pygame.draw.line(b, P[14], (x + w - 4, y + h - 2), (x + w - 4, y + h - 1))
+        surf = P[9] if done else (P[12] if inside else P[3])
+        pygame.draw.line(b, surf, (x + 2, y + 3), (x + w - 3, y + 3))
+        if inside and not done and (tick // 6) % 3 == 0:
+            b.set_at((x + 4 + (tick // 6) % (w - 8), y + 2), P[11])
+        # recette : les ingrédients attendus, éteints tant qu'ils manquent
+        if not done:
+            n = len(c["needs"])
+            x0 = x + w // 2 - (n * 7 - 2) // 2
+            for i, need in enumerate(c["needs"]):
+                key = ("need_" if need in inside else "need_dim_") + need
+                b.blit(self.spr[key], (x0 + i * 7, y - 9))
 
     def _door(self, b, style, cx, cy, direction, tick):
         x, y = cx * TILE, cy * TILE
@@ -556,6 +858,42 @@ class Renderer:
             pygame.draw.rect(b, P[11], (x, y, 8, 8))
             pygame.draw.rect(b, P[12], (x + 1, y + 1, 6, 6), 1)
             b.set_at((x + 3, y + 3), P[15])
+        elif style == "ronces":
+            pygame.draw.rect(b, P[0], (x, y, 8, 8))
+            for i in range(8):
+                b.set_at((x + i, y + (i * 3 + cx + cy) % 8), P[6])
+                b.set_at((x + (i * 5 + cy) % 8, y + i), P[5])
+            b.set_at((x + (cx * 3) % 8, y + (cy * 5) % 8), P[13])
+            b.set_at((x + (cx * 5 + 3) % 8, y + (cy * 3 + 4) % 8), P[13])
+        elif style == "flammes":
+            pygame.draw.rect(b, P[3], (x, y, 8, 8))
+            for xx in range(8):
+                hh = 3 + (xx * 7 + tick // 3 + cx * 5 + cy * 3) % 5
+                for yy in range(8 - hh, 8):
+                    d = yy - (8 - hh)
+                    b.set_at((x + xx, y + yy), P[4 if d == 0 else (12 if d < 3 else 11)])
+        elif style == "fissure":
+            pygame.draw.rect(b, P[14], (x, y, 8, 8))
+            pygame.draw.line(b, P[0], (x, y + 7), (x + 7, y + 7))
+            k = (cx + cy) % 3
+            pygame.draw.line(b, P[0], (x + 2 + k, y), (x + 4, y + 4))
+            pygame.draw.line(b, P[0], (x + 4, y + 4), (x + 3 - k, y + 7))
+            b.set_at((x + 6, y + 1), P[15])
+        elif style == "os":
+            pygame.draw.rect(b, P[0], (x, y, 8, 8))
+            for i in (1, 5):
+                pygame.draw.line(b, P[15], (x + i, y), (x + i, y + 7))
+                pygame.draw.line(b, P[15], (x, y + i + 1), (x + 7, y + i + 1))
+            b.set_at((x + 1, y + 2), P[14])
+            b.set_at((x + 5, y + 6), P[14])
+        elif style == "sceau":
+            pygame.draw.rect(b, P[3], (x, y, 8, 8))
+            on = (tick // 10 + cx + cy) % 4 == 0
+            c = P[13] if on else P[4]
+            for (hx, hy) in ((2, 2), (5, 2), (1, 3), (3, 3), (4, 3), (6, 3), (2, 4), (3, 4), (4, 4),
+                             (5, 4), (3, 5), (4, 5)):
+                b.set_at((x + hx, y + hy), c)
+            pygame.draw.rect(b, P[0], (x, y, 8, 8), 1)
         else:  # portail
             for yy in range(8):
                 for xx in range(8):
@@ -649,10 +987,15 @@ class Renderer:
             self.draw_text(66, y1 + 1, OBJECTS[g.carried]["name"], 11)
         else:
             self.draw_text(66, y1 + 1, "-", 14)
-        # captifs libérés
-        self.draw_text(168, y1 + 1, "LIBRES", 15)
-        for i, cid in enumerate(CAPTIVES):
-            b.blit(self.spr["free_on" if cid in g.freed else "free_off"], (106 + i * 6, y1 + 1))
+        # captifs libérés (Ch.1) ou cœurs sacrés (Ch.2)
+        if g.chapter == 2:
+            self.draw_text(160, y1 + 1, "COEURS", 15)
+            for i, oid in enumerate(HEARTS):
+                b.blit(self.spr["heart_on" if oid in g.hearts else "heart_off"], (106 + i * 6, y1 + 2))
+        else:
+            self.draw_text(168, y1 + 1, "LIBRES", 15)
+            for i, cid in enumerate(CAPTIVES):
+                b.blit(self.spr["free_on" if cid in g.freed else "free_off"], (106 + i * 6, y1 + 1))
         # score + salle
         y2 = HUD_Y + 28
         self.draw_text(4, y2, "SCORE %06d" % g.score, 9)
@@ -723,15 +1066,52 @@ class Renderer:
             ("ESPACE : PRENDRE / ECHANGER / POSER", 15),
             ("ESC : PAUSE      F11 : PLEIN ECRAN", 15),
             ("", 15),
-            ("LIBEREZ LES 8 SORCIERS CAPTIFS AVEC", 11),
-            ("LE BON OBJET, PUIS DETRUISEZ LE", 11),
-            ("NECROMANCIEN. TEMPS LIMITE : %d MIN" % time_min, 11),
+            ("CH.1 : LIBEREZ LES 8 SORCIERS (%d MIN)" % time_min, 11),
+            ("CH.2 : TROUVEZ LES 8 COEURS SACRES", 11),
+            ("ET DETRUISEZ LE NECROMANCIEN", 11),
         ]
         for i, (l, c) in enumerate(lines):
             self.center_text(100 + i * 9, l, c)
         if (tick // 25) % 2 == 0:
             self.center_text(178, "APPUYEZ SUR ESPACE", 7)
         self.center_text(190, "MEILLEUR SCORE %06d" % hiscore, 13)
+
+    def draw_chapter(self, g, tick):
+        """Écran de transition « CHAPITRE 2 » (le sorcier est aspiré par le vortex)."""
+        self.t += 1
+        self._sky(tick, horizon=False)
+        b = self.base
+        bands = (13, 5, 9, 15, 9, 5)
+        s = "CHAPITRE %d" % (g.next_chapter or g.chapter)
+        x0 = (LOGICAL_W - len(s) * font.CELL_W * 2) // 2
+        for i, ch in enumerate(s):
+            for gy, row in enumerate(font.ROWS[ch]):
+                col = bands[(gy + i + tick // 5) % len(bands)]
+                for gx, c in enumerate(row):
+                    if c == "#":
+                        X, Y = x0 + i * 12 + gx * 2, 8 + gy * 3
+                        pygame.draw.rect(b, P[1], (X + 1, Y + 1, 2, 3))
+                        pygame.draw.rect(b, P[col], (X, Y, 2, 3))
+        self.center_text(34, "LE MONDE DU NECROMANCIEN", 13)
+        cx, cy = 80, 70
+        self._vortex(b, cx, cy, 22, 24, tick)
+        # le sorcier tourne et rapetisse dans le vortex
+        k = (tick % 150) / 150.0
+        a = tick * 0.12
+        size = max(1, int(16 * (1 - k)))
+        sp = pygame.transform.scale(self.spr["wiz%d" % ((tick // 6) % 2)], (max(1, size // 2), size))
+        b.blit(sp, (int(cx + math.cos(a) * 18 * (1 - k)) - size // 4, int(cy + math.sin(a) * 18 * (1 - k)) - size // 2))
+        lines = [("VOTRE SCEPTRE S'EST BRISE DANS LE VORTEX.", 15),
+                 ("TROUVEZ LES %d COEURS SACRES ET FRAPPEZ" % len(HEARTS), 11),
+                 ("LE NECROMANCIEN DE %d PENTACLES..." % BOSS_HITS, 11),
+                 ("MAIS IL N'EN EXISTE QUE DEUX !", 12)]
+        for i, (l, c) in enumerate(lines):
+            self.center_text(102 + i * 10, l, c)
+        self.center_text(146, "BONUS TEMPS CH.1 : %d" % g.chapter_bonus, 7)
+        self.center_text(156, "SCORE : %06d" % g.score, 9)
+        self.center_text(166, "NOUVEAU TEMPS LIMITE : %d MIN" % g.time2_min, 14)
+        if (tick // 25) % 2 == 0:
+            self.center_text(184, "ESPACE : CONTINUER", 7)
 
     def draw_pause(self):
         dim = pygame.Surface((PLAY_W, PLAY_H), pygame.SRCALPHA)
@@ -755,7 +1135,10 @@ class Renderer:
         self.center_text(88, "LE NECROMANCIEN", 13, layer="lo", sx=1, sy=2, shadow=5)
         self.center_text(108, "TRIOMPHE", 4, layer="lo", sx=2, sy=3, shadow=3)
         self.center_text(140, g.lost_reason or "", 15)
-        self.center_text(152, "SORCIERS LIBERES : %d / %d" % (len(g.freed), len(CAPTIVES)), 7)
+        if g.chapter == 2:
+            self.center_text(152, "CHAPITRE 2 - COEURS SACRES : %d / %d" % (len(g.hearts), len(HEARTS)), 13)
+        else:
+            self.center_text(152, "SORCIERS LIBERES : %d / %d" % (len(g.freed), len(CAPTIVES)), 7)
         self.center_text(164, "SCORE : %06d" % g.score, 9)
         if (tick // 25) % 2 == 0:
             self.center_text(184, "ESPACE : RETOUR AU TITRE", 11)
@@ -784,7 +1167,8 @@ class Renderer:
             if cid in g.freed:
                 b.blit(sp, (int(x), int(y)))
         self.center_text(40, "LE NECROMANCIEN EST DETRUIT", 15)
-        self.center_text(118, "LES SORCIERS SONT LIBRES ! (%d/%d)" % (len(g.freed), len(CAPTIVES)), 7)
+        self.center_text(114, "LES SORCIERS SONT LIBRES ! (%d/%d)" % (len(g.freed), len(CAPTIVES)), 7)
+        self.center_text(123, "COEURS SACRES : %d/%d" % (len(g.hearts), len(HEARTS)), 13)
         self.center_text(132, "BONUS TEMPS : %d" % g.time_bonus, 11)
         self.center_text(144, "SCORE FINAL : %06d" % g.score, 9)
         if (tick // 25) % 2 == 0:

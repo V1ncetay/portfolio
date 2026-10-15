@@ -141,10 +141,22 @@ class Enemy:
                 cy -= 1
             self.thread_top = (cy + 1) * TILE
             self.vy = self.speed
-        elif move == "patrol":
+        elif move in ("patrol", "stalk"):
             self.y = float((ty + 1) * TILE - self.h)
             while not room.rect_blocked(self.x, self.y + 1, self.w, self.h) and self.y < PLAY_H:
                 self.y += 1
+        elif move == "orbit":
+            # feu follet : tourne autour de son point d'apparition, rayon variable
+            self.cx, self.cy = self.x, self.y
+            self.radius = (param or 3) * TILE
+            self.angle = rng.uniform(0, 2 * math.pi)
+            self.dir = 1 if rng.random() < 0.5 else -1
+            self._orbit_pos()
+        elif move == "swoop":
+            # gargouille : perchée, plonge vers le joueur puis remonte à son perchoir
+            self.perch = (self.x, self.y)
+            self.state = "perch"
+            self.cool = rng.randrange(20, 60)
         elif move == "jump":
             self.water_y = (ROWS - 2) * TILE
             self.y = float(self.water_y + 2)
@@ -155,6 +167,13 @@ class Enemy:
 
     def rect(self):
         return (self.x, self.y, self.w, self.h)
+
+    def _orbit_pos(self):
+        r = self.radius * (0.75 + 0.25 * math.sin(self.t * 0.05))
+        self.x = self.cx + math.cos(self.angle) * r
+        self.y = self.cy + math.sin(self.angle) * r * 0.8
+        self.x = min(max(self.x, TILE), PLAY_W - TILE - self.w)
+        self.y = min(max(self.y, TILE), PLAY_H - TILE - self.h)
 
     def _new_dir(self):
         a = self.rng.uniform(0, 2 * math.pi)
@@ -212,6 +231,54 @@ class Enemy:
                 self.vx = -self.vx
             else:
                 self.x = nx
+        elif move == "stalk":
+            # goule : marche vers le joueur s'il est à peu près à sa hauteur, sinon erre
+            px, py = player.center()
+            if abs(py - (self.y + self.h / 2)) < 36 and abs(px - (self.x + self.w / 2)) > 2:
+                want = 1 if px > self.x + self.w / 2 else -1
+                self.vx = want * self.speed * 1.5
+            elif abs(self.vx) > self.speed:
+                self.vx = self.speed * (1 if self.vx > 0 else -1)
+            nx = self.x + self.vx
+            ahead = nx + (self.w if self.vx > 0 else 0)
+            ground = room.blocked_cell(int(ahead // TILE), int((self.y + self.h + 1) // TILE))
+            if room.rect_blocked(nx, self.y, self.w, self.h) or not ground or nx < 1 or nx + self.w > PLAY_W - 1:
+                self.vx = -self.vx
+            else:
+                self.x = nx
+        elif move == "orbit":
+            self.angle += self.speed * self.dir
+            self._orbit_pos()
+        elif move == "swoop":
+            px, py = player.center()
+            cx, cy = self.x + self.w / 2, self.y + self.h / 2
+            if self.state == "perch":
+                self.cool -= 1
+                if self.cool <= 0 and abs(px - cx) < 40 and py > cy - 8:
+                    d = math.hypot(px - cx, py - cy) or 1
+                    self.vx = (px - cx) / d * self.speed
+                    self.vy = (py - cy) / d * self.speed
+                    self.state = "dive"
+                    self.dive_t = 70
+            elif self.state == "dive":
+                self.dive_t -= 1
+                nx, ny = self.x + self.vx, self.y + self.vy
+                if (self.dive_t <= 0 or room.rect_blocked(nx, ny, self.w, self.h) or
+                        nx < TILE or nx + self.w > PLAY_W - TILE or ny + self.h > PLAY_H - TILE):
+                    self.state = "back"
+                else:
+                    self.x, self.y = nx, ny
+            else:  # back : retour au perchoir (vol fantôme, sans collision)
+                hx, hy = self.perch
+                d = math.hypot(hx - self.x, hy - self.y)
+                if d < 1.0:
+                    self.x, self.y = hx, hy
+                    self.state = "perch"
+                    self.cool = self.rng.randrange(50, 110)
+                else:
+                    self.vx = (hx - self.x) / d * 0.6
+                    self.x += self.vx
+                    self.y += (hy - self.y) / d * 0.6
         elif move == "jump":
             if not self.visible:
                 self.wait -= 1

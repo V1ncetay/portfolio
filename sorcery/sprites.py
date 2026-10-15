@@ -312,6 +312,125 @@ HEART = [
     "...4...",
 ]
 
+# ---------------------------------------------------------------- Chapitre 2
+GOULE = [
+    [
+        "..666..",
+        ".67776.",
+        ".74747.",
+        ".77777.",
+        "..767..",
+        ".AAA777",
+        ".AAA...",
+        ".A3A...",
+        ".AAA...",
+        ".AAA...",
+        ".A.A...",
+        ".A..A..",
+        ".A..A..",
+        "66..66.",
+    ],
+    [
+        "..666..",
+        ".67776.",
+        ".74747.",
+        ".77777.",
+        "..767..",
+        ".AAA777",
+        ".AAA...",
+        ".A3A...",
+        ".AAA...",
+        ".AAA...",
+        ".A.A...",
+        ".A.A...",
+        ".A.A...",
+        ".66.66.",
+    ],
+]
+
+WISP = [
+    [
+        "..9...",
+        ".9F9..",
+        ".9FF9.",
+        "9FBF9.",
+        "9FBBF9",
+        ".9FF9.",
+        "..99..",
+    ],
+    [
+        "...9..",
+        "..9F9.",
+        ".9FF9.",
+        ".9FBF9",
+        "9FBBF9",
+        ".9FF9.",
+        "..99..",
+    ],
+]
+
+GARGOUILLE = [
+    [
+        "E......E",
+        "EE.EE.EE",
+        "EEEEEEEE",
+        ".E4EE4E.",
+        "..EEEE..",
+        "..EFFE..",
+        ".EE..EE.",
+        ".E....E.",
+    ],
+    [
+        "........",
+        "...EE...",
+        "..EEEE..",
+        "EE4EE4EE",
+        "EEEEEEEE",
+        "E.EFFE.E",
+        "..E..E..",
+        ".EE..EE.",
+    ],
+]
+
+BULLE = [
+    [
+        "..CC..",
+        ".CBBC.",
+        "CB44BC",
+        "C4444C",
+        ".C44C.",
+        "..CC..",
+    ],
+]
+
+SACRED_HEART = [
+    ".DD.DD.",
+    "DFBDBBD",
+    "DBBBBBD",
+    "DBBBBBD",
+    ".DBBBD.",
+    "..DBD..",
+    "...D...",
+]
+
+HEART_ICON = [
+    ".D.D.",
+    "DBDBD",
+    "DBBBD",
+    ".DBD.",
+    "..D..",
+]
+
+PENTACLE = [
+    "..DDD..",
+    ".D.B.D.",
+    "DBBBBBD",
+    "D.B.B.D",
+    "D.BBB.D",
+    ".DB.BD.",
+    "..DDD..",
+]
+
 ITEMS = {
     "epee": [
         "...F...",
@@ -503,5 +622,88 @@ ITEMS = {
     ],
     "potion": HEART,
 }
-# Clé dorée = clé recolorée.
+# Clé dorée = clé recolorée ; clé d'os = clé blanche.
 ITEMS["cle_doree"] = [row.replace("E", "B") for row in ITEMS["cle"]]
+ITEMS["cle_os"] = [row.replace("E", "F") for row in ITEMS["cle"]]
+ITEMS.update({
+    "eclat": [
+        "...FF..",
+        "..F99..",
+        ".F99...",
+        ".F9....",
+        ".F9...F",
+        ".F99...",
+        "..F99..",
+        "...FF..",
+    ],
+    "faux": [
+        "FFFFF..",
+        "EEEEFF.",
+        "....EFA",
+        ".....A.",
+        "....A..",
+        "....A..",
+        "...A...",
+        "...A...",
+        "..A....",
+        "..3....",
+    ],
+    "eau_benite": [
+        "..EEE..",
+        "...E...",
+        "..EFE..",
+        ".E9F9E.",
+        "E99999E",
+        "E9F9999",
+        "E99999E",
+        ".E999E.",
+        "..EEE..",
+    ],
+    "cierge": [
+        "...B...",
+        "..BCB..",
+        "...C...",
+        "...0...",
+        "..FFF..",
+        "..FFF..",
+        "..FEF..",
+        "..FFF..",
+        "..FFF..",
+        ".EEEEE.",
+    ],
+    "cloche": [
+        "...E...",
+        "..EFE..",
+        ".EFFFE.",
+        ".EFFFE.",
+        ".EFFEE.",
+        "EFFFEEE",
+        "EEEEEEE",
+        "...F...",
+    ],
+    "grimoire": [
+        ".33333.",
+        "3BBBBB3",
+        "3B444B3",
+        "3B4B4B3",
+        "3B444B3",
+        "3BBBBB3",
+        "3B4B4B3",
+        "3BBBBB3",
+        ".33333.",
+    ],
+    "marteau": [
+        "EEEEEEE",
+        "EFFEEEE",
+        "EEEEEEE",
+        "...A...",
+        "...A...",
+        "...A...",
+        "...A...",
+        "...A...",
+        "...A...",
+        "...3...",
+    ],
+    "pentacle": PENTACLE,
+    "coeur": SACRED_HEART,
+})

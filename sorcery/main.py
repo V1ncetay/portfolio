@@ -5,7 +5,8 @@
     python main.py --screenshots génère des captures dans screenshots/
     python main.py --solution    affiche la solution calculée par le solveur
     python main.py --export-music F.wav  exporte le thème du titre en WAV
-Options : --time MIN (durée), --fullscreen, --mute, --no-scanlines
+Options : --time MIN (durée du Ch.1), --time2 MIN (Ch.2), --chapter 2 (démarrer au
+Chapitre 2), --fullscreen, --mute, --no-scanlines
 """
 import argparse
 import os
@@ -17,12 +18,13 @@ if HERE not in sys.path:
 
 import pygame  # noqa: E402
 
-from config import WINDOW_W, WINDOW_H, TICK_S, TIME_LIMIT_MIN  # noqa: E402
+from config import WINDOW_W, WINDOW_H, TICK_S, TIME_LIMIT_MIN, TIME_LIMIT_CH2_MIN  # noqa: E402
 from game import Game, Input  # noqa: E402
 
 
 class App:
-    def __init__(self, fullscreen=False, mute=False, time_min=TIME_LIMIT_MIN, scanlines=True, headless=False):
+    def __init__(self, fullscreen=False, mute=False, time_min=TIME_LIMIT_MIN, scanlines=True, headless=False,
+                 chapter=1, time2_min=TIME_LIMIT_CH2_MIN):
         pygame.mixer.pre_init(22050, -16, 1, 512)
         pygame.init()
         from render import Renderer
@@ -40,6 +42,9 @@ class App:
             pass
         self.audio = Audio(enabled=not mute)
         self.time_min = time_min
+        self.time2_min = time2_min
+        self.chapter = chapter
+        self.track = None
         self.scene = "title"
         self.scene_t = 0
         self.game = None
@@ -114,11 +119,25 @@ class App:
 
     # ------------------------------------------------------------------ scènes
     def new_game(self):
-        self.game = Game(audio=self.audio, time_limit_min=self.time_min)
+        self.game = Game(audio=self.audio, time_limit_min=self.time_min, chapter=self.chapter,
+                         time2_min=self.time2_min)
         self.audio.play("start")
-        self.audio.play_music("ingame")
+        self.track = None
+        self.sync_music()
         self.scene = "play"
         self.scene_t = 0
+
+    def sync_music(self):
+        """Piste de jeu selon le chapitre ; silence pendant l'écran de transition."""
+        g = self.game
+        want = None if g.state == "chapter" else ("ingame2" if g.chapter == 2 else "ingame")
+        if want == self.track:
+            return
+        self.track = want
+        if want:
+            self.audio.play_music(want)
+        else:
+            self.audio.music_stop()
 
     def to_title(self):
         if self.game:
@@ -141,6 +160,8 @@ class App:
                 return
             inp.action = "action" in edges
             self.game.update(inp)
+            if self.game.state in ("play", "chapter"):
+                self.sync_music()
             if self.game.state == "lost":
                 self.scene, self.scene_t = "over", 0
                 self.audio.play_music("over", loops=0)
@@ -163,7 +184,10 @@ class App:
         if self.scene == "title":
             r.draw_title(self.scene_t, self.hiscore, self.time_min)
         elif self.scene in ("play", "pause"):
-            r.draw_game(self.game)
+            if self.game.state == "chapter":
+                r.draw_chapter(self.game, self.game.tick)
+            else:
+                r.draw_game(self.game)
             if self.scene == "pause":
                 r.draw_pause()
         elif self.scene == "over":
@@ -194,7 +218,9 @@ def main(argv=None):
     ap.add_argument("--selftest", action="store_true", help="tests headless")
     ap.add_argument("--screenshots", nargs="?", const=os.path.join(HERE, "screenshots"), help="captures PNG")
     ap.add_argument("--solution", action="store_true", help="affiche la solution")
-    ap.add_argument("--time", type=int, default=TIME_LIMIT_MIN, help="temps limite (minutes)")
+    ap.add_argument("--time", type=int, default=TIME_LIMIT_MIN, help="temps limite du Ch.1 (minutes)")
+    ap.add_argument("--time2", type=int, default=TIME_LIMIT_CH2_MIN, help="temps limite du Ch.2 (minutes)")
+    ap.add_argument("--chapter", type=int, choices=(1, 2), default=1, help="chapitre de départ")
     ap.add_argument("--fullscreen", action="store_true")
     ap.add_argument("--mute", action="store_true")
     ap.add_argument("--no-scanlines", action="store_true")
@@ -224,7 +250,7 @@ def main(argv=None):
         print("\n".join(solver.describe(plan)))
         return 0 if win else 1
     App(fullscreen=args.fullscreen, mute=args.mute, time_min=args.time,
-        scanlines=not args.no_scanlines).run()
+        scanlines=not args.no_scanlines, chapter=args.chapter, time2_min=args.time2).run()
     return 0
 
 

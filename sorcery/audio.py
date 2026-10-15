@@ -4,7 +4,8 @@ Aucun fichier audio fourni : les tampons 16 bits sont générés avec le module 
 puis passés à pygame.mixer.Sound(buffer=...). Le thème du titre et de la défaite
 (Dukas, domaine public) est arrangé dans music.py ; la boucle de jeu ci-dessous est
 une mélodie originale. Remplacement facultatif par des fichiers de l'utilisateur :
-music/title.(ogg|wav|mp3), music/ingame.(...), music/gameover.(...) à côté de main.py
+music/title.(ogg|wav|mp3), music/ingame.(...), music/ingame2.(...) (Chapitre 2),
+music/gameover.(...) à côté de main.py
 ou de l'exécutable.
 """
 import array
@@ -95,6 +96,10 @@ def build_effects():
     fx["gameover"] = _tones([(midi(n), d) for n, d in ((69, .25), (68, .25), (67, .25), (66, .25), (57, .8))],
                             0.25, 0.5, 0.3)
     fx["start"] = _tones([(midi(n), 0.06) for n in (57, 60, 64, 69, 72, 76, 81)], 0.22)
+    fx["heart"] = _tones([(midi(n), 0.05) for n in (76, 81, 84, 88, 93)] + [(midi(88), 0.15)], 0.22, 0.25, 0.4)
+    craft = _tones([(midi(n), 0.08) for n in (60, 67, 72, 79, 84)] + [(midi(91), 0.4)], 0.22, 0.375, 0.5)
+    _noise(craft, 0, 0.25, 0.12, 1.0, 5, seed=11)
+    fx["craft"] = craft
     return fx
 
 
@@ -115,23 +120,33 @@ TUNE_CHORDS = [(57, 60, 64), (53, 57, 60), (55, 60, 64), (55, 59, 62),
 STEP = 0.15
 
 
-def build_tune():
-    total = len(TUNE_MELODY) * STEP
+def build_tune(transpose=0, step=STEP, dark=False):
+    """Boucle de jeu. dark=True : variante du Chapitre 2 (plus grave, plus lente, mélodie au
+    rapport cyclique fin, basse en octaves descendantes et arpèges renversés)."""
+    total = len(TUNE_MELODY) * step
     buf = _blank(total)
-    st = int(STEP * RATE)
+    st = int(step * RATE)
     for i, n in enumerate(TUNE_MELODY):
         if n:
-            _square(buf, i * st, midi(n), STEP * 0.95, 0.20, 0.5, 0.5)
+            _square(buf, i * st, midi(n + transpose), step * 0.95, 0.20, 0.375 if dark else 0.5, 0.5)
     for bar, root in enumerate(TUNE_BASS):
         for q in range(4):
-            note = root + (12 if q % 2 else 0)
-            _square(buf, (bar * 8 + q * 2) * st, midi(note), STEP * 1.9, 0.17, 0.5, 0.3)
+            if dark:
+                note = root + transpose - 12 + (0 if q % 2 else 12)
+            else:
+                note = root + (12 if q % 2 else 0)
+            _square(buf, (bar * 8 + q * 2) * st, midi(note), step * 1.9, 0.17, 0.5, 0.3)
     half = st // 2
     for bar, chord in enumerate(TUNE_CHORDS):
         for k in range(16):
-            note = chord[k % 3] + 12
-            _square(buf, bar * 8 * st + k * half, midi(note), STEP / 2, 0.07, 0.25, 0.6)
+            note = (chord[::-1] if dark else chord)[k % 3] + 12 + transpose
+            _square(buf, bar * 8 * st + k * half, midi(note), step / 2, 0.07, 0.25, 0.6)
     return buf
+
+
+def build_tune2():
+    """Chapitre 2 : variation de la boucle de jeu, une tierce mineure plus bas."""
+    return build_tune(transpose=-3, step=0.17, dark=True)
 
 
 def to_bytes(samples, channels=1):
@@ -145,8 +160,8 @@ def to_bytes(samples, channels=1):
 
 
 MUSIC_EXTS = (".ogg", ".wav", ".mp3")
-TRACK_VOLUME = {"title": 1.0, "over": 1.0, "ingame": 0.35}
-OVERRIDE_NAMES = {"title": "title", "ingame": "ingame", "over": "gameover"}
+TRACK_VOLUME = {"title": 1.0, "over": 1.0, "ingame": 0.35, "ingame2": 0.35}
+OVERRIDE_NAMES = {"title": "title", "ingame": "ingame", "ingame2": "ingame2", "over": "gameover"}
 
 
 def music_dirs():
@@ -196,7 +211,7 @@ class Audio:
             for name, samples in build_effects().items():
                 self.sounds[name] = pygame.mixer.Sound(buffer=to_bytes(samples, channels))
             for name, builder in (("title", music.build_title), ("over", music.build_over),
-                                  ("ingame", build_tune)):
+                                  ("ingame", build_tune), ("ingame2", build_tune2)):
                 path = find_override(name)
                 if path:
                     self.overrides[name] = path
