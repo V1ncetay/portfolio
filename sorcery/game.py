@@ -1,5 +1,6 @@
 """Logique de jeu (indépendante du rendu) : une partie de Sorcery."""
 import random
+import zlib
 
 from config import (TILE, PLAY_W, PLAY_H, ENERGY_MAX, TICK_HZ, TIME_LIMIT_MIN, TIME_LIMIT_CH2_MIN,
                     CHAPTER_SCREEN_TICKS, SCORE_KILL, SCORE_FREE, SCORE_BOSS, SCORE_TIME_PER_S,
@@ -129,7 +130,8 @@ class Game:
         self.room = self._room_map(rid)
         self.visited.add(rid)
         data = ROOMS[rid]
-        rrng = random.Random(hash((self.seed, rid, self.tick)) & 0xFFFFFFFF)
+        # graine stable (hash() de str est salé par processus : captures non reproductibles)
+        rrng = random.Random(zlib.crc32(("%d:%s:%d" % (self.seed, rid, self.tick)).encode()))
         self.enemies = []
         for e in data["enemies"]:
             kind, tx, ty = e[:3]

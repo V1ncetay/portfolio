@@ -256,6 +256,23 @@ pentacles s'affiche en haut à droite.
 30. Frapper le Necromancien (N1) avec 3 pentacles : PENTACLE (V4), PENTACLE (X7), PENTACLE (V5)
 ```
 
+## Graphismes
+
+Tout est peint par le code dans les 16 encres CPC (160x152 logiques, pixels Mode 0) :
+
+- **Chapitre 1** (`render_ch1.py`) : décors en couches par zone (landes au couchant avec collines,
+  menhirs et bruyère ; bois avec canopée, troncs, racines, lucioles et hiboux ; rivière avec sapins en
+  ombres chinoises, roseaux qui ondulent et reflet de lune animé ; château en briques éclairées par des
+  torches animées, bannières, fenêtres ; catacombes avec ossuaires, toiles et gouttes qui tombent ;
+  palais avec lambris, tapisseries, miroirs, lustres et damier ; Stonehenge sous la lune et la voie
+  lactée). Tuiles à arêtes éclairées / ombrées, chaperons (herbe, mousse, pierre, dorure) et ombres
+  portées pour que les plateformes se détachent toujours du fond. Variations par hash stable (FNV / crc32).
+- Sorcier à cape animée (vol, marche, pose), ennemis à 2 images, captifs qui appellent à l'aide,
+  chaudrons qui bouillonnent, portes dessinées d'un seul tenant.
+- Le fond statique de chaque salle est mis en cache (~11 ms à la première entrée) ; seules les
+  animations d'ambiance sont redessinées : ~0,2 ms de rendu + ~2,1 ms de composition par frame (headless).
+- Les captures (`--screenshots`) sont reproductibles octet pour octet (graines stables).
+
 ## Ce qui est fidèle, ce qui est inventé
 
 D'après `DESIGN.md`, la plupart des données de l'original n'ont pas pu être vérifiées. Ce qui suit
@@ -330,6 +347,7 @@ L'auto-test vérifie les points suivants :
 | `game.py` | logique de jeu (indépendante du rendu) |
 | `entities.py` | collisions, sorcier, ennemis, Nécromancien, projectiles |
 | `render.py` | rendu procédural (tuiles, décors, HUD, écrans) |
+| `render_ch1.py` | décors, tuiles et animations d'ambiance du Chapitre 1 |
 | `sprites.py`, `font.py` | pixel art et police 5x7 originaux |
 | `audio.py` | synthèse des effets, boucle de jeu, musique par scène et fichiers de remplacement |
 | `music.py` | partition (Dukas) en texte et synthèse 3 voix façon AY-3-8912 |

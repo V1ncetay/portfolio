@@ -12,8 +12,10 @@ from config import (PALETTE, LOGICAL_W, LOGICAL_H, TEXT_W, TEXT_H, WINDOW_W, WIN
                     COLS, ROWS, PLAY_W, PLAY_H, HUD_Y, ENERGY_MAX, TIME_LIMIT_MIN)
 import font
 import sprites
+import render_ch1
 from world import (ROOMS, OBJECTS, DOORS, CAPTIVES, ZONES, SOLID, FAKE, WATER, HEARTS, CRAFTS,
-                   LIGHT_ITEMS, BOSS_HITS, zone_theme, doors_in_room, opening_cells, gate_rect)
+                   LIGHT_ITEMS, BOSS_HITS, zone_theme, room_chapter, doors_in_room, opening_cells,
+                   gate_rect)
 from game import ITEM_W, ITEM_H, CAGE_W, CAGE_H, CAULDRON_W, CAULDRON_H
 
 P = PALETTE
@@ -230,6 +232,8 @@ class Renderer:
             pygame.draw.line(self.scan, (0, 0, 0, 80), (0, y), (WINDOW_W - 1, y))
         self._glyphs = {}
         self._bg = {}
+        self._amb = {}                       # Ch.1 : animations d'ambiance par salle
+        self._water = {}                     # Ch.1 : eau pré-rendue + cases d'eau par salle
         self.t = 0
         self._build_sprites()
         self._build_dark_mask()
@@ -253,10 +257,13 @@ class Renderer:
         for i, a in enumerate(sprites.WIZARD):
             both("wiz%d" % i, a)
         both("wiz_stand", sprites.WIZARD_STAND)
-        cap = {2: 6, 9: 7}
+        for i, a in enumerate(sprites.WIZARD_WALK):
+            both("wiz_walk%d" % i, a)
+        cap = {2: 6, 9: 7, 5: 3, 13: 10, 1: 0}
         for i, a in enumerate(sprites.WIZARD):
             both("cap%d" % i, a, cap)
         both("cap_stand", sprites.WIZARD_STAND, cap)
+        both("cap_wave", sprites.WIZARD_WAVE, cap)
         S["wiz_white"] = silhouette(S["wiz0"], 15)
         S["wiz_white_l"] = pygame.transform.flip(S["wiz_white"], True, False)
         for i, a in enumerate(sprites.NECRO):
@@ -268,11 +275,15 @@ class Renderer:
                              ("spider", sprites.SPIDER), ("fish", sprites.FISH), ("guard", sprites.GUARD),
                              ("fireball", sprites.FIREBALL), ("cauldron", sprites.CAULDRON),
                              ("goule", sprites.GOULE), ("wisp", sprites.WISP),
-                             ("gargouille", sprites.GARGOUILLE), ("bulle", sprites.BULLE)):
+                             ("gargouille", sprites.GARGOUILLE), ("bulle", sprites.BULLE),
+                             ("c1_skull", sprites.C1_SKULL), ("c1_ghost", sprites.C1_GHOST),
+                             ("c1_bat", sprites.C1_BAT), ("c1_spider", sprites.C1_SPIDER),
+                             ("c1_fish", sprites.C1_FISH), ("c1_guard", sprites.C1_GUARD)):
             for i, a in enumerate(frames):
                 both("%s%d" % (name, i), a)
         for i, a in enumerate(sprites.CAULDRON):
             both("cauldron_m%d" % i, a, {7: 4})
+        S["c1_pot"] = art_surface(sprites.C1_POT)
         for oid, art in sprites.ITEMS.items():
             rows = list(art)
             while len(rows) < ITEM_H:
@@ -349,6 +360,14 @@ class Renderer:
             return bg
         theme = zone_theme(rid)
         room = ROOMS[rid]
+        if room_chapter(rid) == 1:          # Ch.1 : décors en couches (render_ch1)
+            s, amb = render_ch1.build_room(self, rid, room, "seuil" if theme == "antre" else theme, tiles)
+            self._amb[rid] = amb
+            if room["water"]:
+                moon = [a[1] for a in amb if a[0] == "moonrefl"]
+                self._water[rid] = (render_ch1.Water(moon[0] if moon else None), render_ch1.water_runs(tiles))
+            self._bg[rid] = s
+            return s
         s = pygame.Surface((PLAY_W, PLAY_H))
         rng = random.Random(_h(len(rid), ord(rid[0]), ord(rid[1])))
         self._paint_background(s, theme, rng, tiles)
@@ -651,8 +670,13 @@ class Renderer:
         room = ROOMS[rid]
         b.blit(self.room_bg(rid, g.tiles[rid]), (0, 0))
         tick = g.tick
+        ch1 = rid in self._amb
+        if ch1:
+            render_ch1.draw_ambient(b, self._amb[rid], tick)
         # décor animé : torches
         for d in room["decor"]:
+            if ch1:
+                break
             if d[0] == "torch":
                 x, y = d[1] * TILE, d[2] * TILE
                 pygame.draw.rect(b, P[10], (x + 1, y + 4, 2, 6))
@@ -678,8 +702,11 @@ class Renderer:
             elif d[0] == "vortex_bas":                   # le vortex d'arrivée, refermé au ciel
                 self._vortex(b, d[1] * TILE, d[2] * TILE + 10, 7, 10, tick, faint=True)
         # eau / lave animée
-        if room["water"]:
-            liquid = self._lava if room["lava"] else self._water
+        if rid in self._water:
+            water, runs = self._water[rid]
+            water.draw(b, runs, tick)
+        elif room["water"]:
+            liquid = self._lava if room["lava"] else self._water_tile
             for cy in range(ROWS):
                 for cx in range(COLS):
                     if g.tiles[rid][cy][cx] == WATER:
@@ -687,11 +714,17 @@ class Renderer:
         # portes
         for did, direction in doors_in_room(rid):
             if did not in g.doors_open:
+                if ch1:
+                    self._door_ch1(b, DOORS[did].get("style"), opening_cells(direction), direction, tick)
+                    continue
                 for cx, cy in opening_cells(direction):
                     self._door(b, DOORS[did].get("style"), cx, cy, direction, tick)
         # chaudrons
         for c in room["cauldrons"]:
             r = g.cauldron_rect(c)
+            if ch1:
+                self._cauldron_ch1(b, int(r[0]), int(r[1]), c[2] == "plein", tick, c[0])
+                continue
             name = "cauldron%d" if c[2] == "plein" else "cauldron_m%d"
             b.blit(self.spr[name % ((tick // 10) % 2)], (r[0], r[1]))
         # vortex de fin de chapitre
@@ -714,15 +747,17 @@ class Renderer:
                 y += (tick // 12) % 2
             b.blit(sp, (int(it["x"]), int(y)))
         # ennemis
-        for e in g.enemies:
+        for ei, e in enumerate(g.enemies):
             if not e.active:
                 continue
             if e.kind == "spider":
                 pygame.draw.line(b, P[14], (int(e.x) + 3, e.thread_top), (int(e.x) + 3, int(e.y)))
-            frames = 2 if ("%s1" % e.kind) in self.spr else 1
+            kind = ("c1_" + e.kind) if ch1 and ("c1_%s0" % e.kind) in self.spr else e.kind
+            frames = 2 if ("%s1" % kind) in self.spr else 1
             fast = e.kind in ("bat", "wisp") or (e.kind == "gargouille" and getattr(e, "state", "") != "perch")
-            fr = (tick // (6 if fast else 12) + id(e) % 2) % frames
-            name = "%s%d" % (e.kind, fr)
+            phase = ei % 2                   # déphasage stable (id() variait d'une exécution à l'autre)
+            fr = (tick // (6 if fast else 12) + phase) % frames
+            name = "%s%d" % (kind, fr)
             if e.vx < 0 and e.kind in ("skull", "guard", "fish", "ghost", "goule", "gargouille"):
                 name += "_l"
             if e.kind in ("fish", "bulle") and e.vy > 0:
@@ -757,7 +792,7 @@ class Renderer:
         b.set_clip(None)
         self.draw_hud(g)
 
-    def _water(self, b, cx, cy, tick, tiles):
+    def _water_tile(self, b, cx, cy, tick, tiles):
         x, y = cx * TILE, cy * TILE
         pygame.draw.rect(b, P[1], (x, y, TILE, TILE))
         surface = cy == 0 or tiles[cy - 1][cx] != WATER
@@ -901,15 +936,167 @@ class Renderer:
                     b.set_at((x + xx, y + yy), P[(13, 5, 0, 5, 13, 15)[v]])
 
     def _cage(self, b, r, tick, cid):
+        """Cage de fer suspendue ; le captif s'agite (appelle à l'aide, se retourne, cligne)."""
         x, y = int(r[0]), int(r[1])
-        fr = (tick // 20 + len(cid)) % 2
-        name = "cap%d" % fr if fr else "cap_stand"
-        b.blit(self.spr[name + ("_l" if len(cid) % 2 else "")], (x + 4, y + 5))
+        k = sum(map(ord, cid))                       # déphasage stable par captif
+        t = (tick + k * 13) % 240
+        flip = "_l" if (t // 120) % 2 else ""
+        if 40 <= t < 70 or 160 <= t < 175:
+            name = "cap_wave" if (t // 6) % 2 else "cap_stand"
+        else:
+            name = "cap_stand"
+        b.blit(self.spr[name + flip], (x + (2 if not flip else 4), y + 5))
+        # chaîne vers le plafond
+        for yy in range(y - 6, y):
+            if 0 <= yy:
+                b.set_at((x + CAGE_W // 2, yy), P[14 if yy % 2 else 15])
+        # dôme + anneau
+        pygame.draw.rect(b, P[14], (x + 1, y, CAGE_W - 2, 2))
+        pygame.draw.line(b, P[15], (x + 2, y), (x + 6, y))
+        pygame.draw.rect(b, P[14], (x + CAGE_W // 2 - 1, y - 1, 3, 1))
+        # barreaux (reflet à gauche de chacun)
         for i in range(0, CAGE_W, 3):
-            pygame.draw.line(b, P[14], (x + i, y + 2), (x + i, y + CAGE_H - 1))
-        pygame.draw.rect(b, P[10], (x, y, CAGE_W, 2))
-        pygame.draw.rect(b, P[10], (x, y + CAGE_H - 2, CAGE_W, 2))
-        b.set_at((x + CAGE_W // 2, y - 1), P[10])
+            pygame.draw.line(b, P[14], (x + i, y + 2), (x + i, y + CAGE_H - 3))
+            b.set_at((x + i, y + 3 + (i % 4)), P[15])
+            b.set_at((x + i, y + 14 + (i % 3)), P[15])
+        pygame.draw.line(b, P[14], (x, y + 12), (x + CAGE_W - 1, y + 12))
+        # cadenas
+        pygame.draw.rect(b, P[11], (x + 7, y + 12, 3, 3))
+        b.set_at((x + 8, y + 13), P[0])
+        b.set_at((x + 8, y + 11), P[14])
+        # socle de bois
+        pygame.draw.rect(b, P[10], (x, y + CAGE_H - 3, CAGE_W, 3))
+        pygame.draw.line(b, P[12], (x, y + CAGE_H - 3), (x + CAGE_W - 1, y + CAGE_H - 3))
+        pygame.draw.line(b, P[3], (x, y + CAGE_H - 1), (x + CAGE_W - 1, y + CAGE_H - 1))
+
+    def _cauldron_ch1(self, b, x, y, full, tick, seed):
+        """Chaudron du Ch.1 : fonte noire, breuvage qui bouillonne, bulles, vapeur et braises."""
+        liq, dark, hi = (7, 6, 15) if full else (4, 3, 12)
+        b.blit(self.spr["c1_pot"], (x, y))
+        # surface agitée
+        for i in range(2, 14):
+            ph = (i + tick // 4 + seed) % 6
+            b.set_at((x + i, y + 3), P[hi if ph == 0 else (dark if ph == 3 else liq)])
+        # bulles qui montent puis éclatent
+        for k, bx in enumerate((4, 8, 11)):
+            t = (tick + k * 17 + seed * 5) % 36
+            if t < 18:
+                by = y + 3 - t // 3
+                xx = x + bx + ((t // 4) % 2)
+                b.set_at((xx, by), P[liq])
+                if t > 6:
+                    b.set_at((xx, by - 1), P[hi])
+            elif t < 22:
+                by = y + 3 - 6
+                b.set_at((x + bx - 1, by), P[hi])
+                b.set_at((x + bx + 2, by), P[hi])
+        # vapeur
+        for k in range(2):
+            t = (tick // 3 + k * 9 + seed) % 18
+            vx = x + 5 + k * 5 + int(2 * math.sin((tick + k * 40) * 0.08))
+            vy = y - 3 - t
+            if 0 <= vy < PLAY_H and t < 14 and (t + k) % 3:
+                b.set_at((vx, vy), P[14 if t < 8 else 1])
+        # braises sous la marmite
+        for i in range(4, 12):
+            f = (i * 5 + tick // 3) % 7
+            if f < 4:
+                b.set_at((x + i, y + 11 - (f % 2)), P[(4, 12, 11, 4)[f]])
+
+    def _door_ch1(self, b, style, cells, direction, tick):
+        """Portes du Ch.1 dessinées d'un seul tenant sur toute l'ouverture."""
+        xs = [c[0] for c in cells]
+        ys = [c[1] for c in cells]
+        x0, y0 = min(xs) * TILE, min(ys) * TILE
+        w, h = (max(xs) - min(xs) + 1) * TILE, (max(ys) - min(ys) + 1) * TILE
+        vert = h > w
+        px = b.set_at
+        if style == "bois":
+            pygame.draw.rect(b, P[10], (x0, y0, w, h))
+            for xx in range(x0, x0 + w):                 # planches
+                if (xx - x0) % 3 == 2:
+                    pygame.draw.line(b, P[3], (xx, y0), (xx, y0 + h - 1))
+            for yy in range(y0, y0 + h, 5):              # veinage
+                px((x0 + (yy * 7) % w, yy), P[3])
+                px((x0 + (yy * 3 + 1) % w, yy + 2), P[12])
+            for by in ((y0 + 5, y0 + h - 9) if vert else (y0 + 2,)):
+                pygame.draw.rect(b, P[14], (x0, by, w, 2))
+                pygame.draw.line(b, P[0], (x0, by + 2), (x0 + w - 1, by + 2))
+                for rx in range(x0 + 1, x0 + w, 5):
+                    px((rx, by), P[15])
+            cy = y0 + h // 2
+            pygame.draw.rect(b, P[11], (x0 + w // 2 - 1, cy - 1, 3, 3), 1)
+            px((x0 + w // 2, cy - 2), P[14])
+            pygame.draw.line(b, P[0], (x0 + w - 1, y0), (x0 + w - 1, y0 + h - 1))
+            pygame.draw.line(b, P[12], (x0, y0), (x0, y0 + h - 1))
+        elif style == "herse":
+            pygame.draw.rect(b, P[0], (x0, y0, w, h))
+            bars = range(x0 + 1, x0 + w, 3) if vert else range(x0 + 1, x0 + w, 4)
+            for bx in bars:
+                pygame.draw.line(b, P[14], (bx, y0), (bx, y0 + h - 2))
+                for yy in range(y0, y0 + h - 2, 4):
+                    px((bx, yy), P[15])
+                px((bx, y0 + h - 1), P[15])          # pointe
+            for yy in range(y0 + 3, y0 + h - 3, 8):
+                pygame.draw.line(b, P[14], (x0, yy), (x0 + w - 1, yy))
+                pygame.draw.line(b, P[1], (x0, yy + 1), (x0 + w - 1, yy + 1))
+        elif style == "trappe":
+            pygame.draw.rect(b, P[10], (x0, y0, w, h))
+            for yy in range(y0 + 2, y0 + h, 3):
+                pygame.draw.line(b, P[3], (x0, yy), (x0 + w - 1, yy))
+            for sx in (x0 + 4, x0 + w - 6):
+                pygame.draw.rect(b, P[14], (sx, y0, 2, h))
+                px((sx, y0 + 1), P[15])
+                px((sx, y0 + h - 2), P[15])
+            cx = x0 + w // 2
+            pygame.draw.rect(b, P[11], (cx - 2, y0 + 2, 4, 4))
+            px((cx - 1, y0 + 1), P[14])
+            px((cx, y0 + 1), P[14])
+            px((cx - 1, y0 + 3), P[0])
+            px((cx - 1, y0 + 4), P[0])
+            pygame.draw.rect(b, P[0], (x0, y0, w, h), 1)
+        elif style == "rune":
+            pygame.draw.rect(b, P[5], (x0, y0, w, h))
+            pygame.draw.rect(b, P[1], (x0, y0, w, h), 1)
+            glyphs = ("1.1", "010", "1.1"), ("11.", "1.1", "11."), (".1.", "111", ".1."), ("1..", "111", "..1")
+            n = max(1, (w if not vert else h) // 8)
+            for i in range(n):
+                on = (tick // 6 - i * 3) % 16
+                col = P[15] if on < 2 else (P[13] if on < 6 else P[1])
+                gx = x0 + 2 + i * 8 if not vert else x0 + 2
+                gy = y0 + 2 if not vert else y0 + 2 + i * 8
+                for j, row in enumerate(glyphs[i % 4]):
+                    for k, ch in enumerate(row):
+                        if ch == "1":
+                            px((gx + k, gy + j), col)
+            for i in range(3):                           # étincelles d'énergie
+                v = render_ch1.h32(tick // 3, i, x0)
+                px((x0 + v % w, y0 + (v >> 8) % h), P[9 if i % 2 else 13])
+        elif style == "or":
+            pygame.draw.rect(b, P[11], (x0, y0, w, h))
+            pygame.draw.rect(b, P[10], (x0, y0, w, h), 1)
+            pygame.draw.rect(b, P[12], (x0 + 2, y0 + 2, w - 4, h - 4), 1)
+            cx, cy = x0 + w // 2, y0 + h // 2
+            for dx in ((-8, 0, 8) if not vert else (0,)):
+                px((cx + dx, cy - 1), P[4])
+                px((cx + dx - 1, cy), P[4])
+                px((cx + dx + 1, cy), P[4])
+                px((cx + dx, cy + 1), P[4])
+                px((cx + dx, cy), P[15])
+            s = (tick // 2) % (w + h + 40)               # reflet qui glisse
+            for j in range(h):
+                xx = x0 + s - j
+                if x0 <= xx < x0 + w:
+                    px((xx, y0 + j), P[15])
+        else:  # portail maudit : ondes magiques
+            for yy in range(h):
+                for xx in range(w):
+                    v = int(xx * 0.5 + 2.5 * math.sin((yy + tick * 0.15) * 0.9 + xx * 0.3) + tick // 3) % 6
+                    px((x0 + xx, y0 + yy), P[(13, 5, 1, 5, 13, 15)[v]])
+            pygame.draw.rect(b, P[14], (x0, y0, w, h), 1)
+            for i in range(2):
+                v = render_ch1.h32(tick // 4, i)
+                px((x0 + 1 + v % (w - 2), y0 + 1 + (v >> 8) % (h - 2)), P[15])
 
     def _boss(self, b, bo, tick):
         x, y = int(bo.x), int(bo.y)
@@ -940,9 +1127,12 @@ class Renderer:
             name = "wiz_white"
         elif p.landed and not p.moving:
             name = "wiz_stand"
+        elif p.landed:
+            name = "wiz_walk%d" % ((p.anim // 8) % 2)
         else:
             name = "wiz%d" % ((p.anim // 6) % 2)
-        b.blit(self.spr[name + left], (int(p.x) - 1, int(p.y) - 2))
+        # sprite de 10 px : la cape flotte derrière (2 colonnes de plus côté dos)
+        b.blit(self.spr[name + left], (int(p.x) - (1 if left else 3), int(p.y) - 2))
         # objet porté, tenu devant le sorcier (petit)
         if g.carried:
             sp = self.item_sprite(g.carried)
