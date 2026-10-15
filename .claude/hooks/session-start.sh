@@ -16,12 +16,23 @@ JADX_JAR=/opt/jadx/jadx-headless-mcp-0.7.1-all.jar
 JADX_URL=https://github.com/1013503897/jadx-headless-mcp/releases/download/v0.7.1/jadx-headless-mcp-0.7.1-all.jar
 JADX_SHA256=6e5eacf500b64292bfb73c49797c1958f6ee44646e43e868039ae7feb573ff75
 
+# Run in the background so the session starts without waiting for the ~600 MB download
+echo '{"async": true, "asyncTimeout": 600000}'
+
+# Export paths before installing so they are set even while the install is still running
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  {
+    echo "export GHIDRA_INSTALL_DIR=$GHIDRA_DIR"
+    echo "export REA_JADX_MCP_JAR=$JADX_JAR"
+  } >> "$CLAUDE_ENV_FILE"
+fi
+
 CURL=(curl -fsSL --retry 4 --retry-delay 2)
 [ -f /root/.ccr/ca-bundle.crt ] && CURL+=(--cacert /root/.ccr/ca-bundle.crt)
 
 # JDK 21 (Ghidra and JADX both need a full JDK)
 if ! command -v javac >/dev/null 2>&1 || ! javac -version 2>&1 | grep -qE 'javac (2[1-9]|[3-9][0-9])'; then
-  apt-get update -qq
+  apt-get update -qq >/dev/null
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openjdk-21-jdk-headless >/dev/null
 fi
 
@@ -30,8 +41,11 @@ if [ ! -x "$GHIDRA_DIR/support/analyzeHeadless" ]; then
   tmp=$(mktemp -d)
   "${CURL[@]}" -o "$tmp/$GHIDRA_ZIP" "$GHIDRA_URL"
   echo "$GHIDRA_SHA256  $tmp/$GHIDRA_ZIP" | sha256sum -c --quiet
+  # Extract then move, so an interrupted run never leaves a half-installed Ghidra behind
+  unzip -q "$tmp/$GHIDRA_ZIP" -d "$tmp/x"
   mkdir -p /opt/ghidra
-  unzip -q "$tmp/$GHIDRA_ZIP" -d /opt/ghidra
+  rm -rf "$GHIDRA_DIR"
+  mv "$tmp/x/$(basename "$GHIDRA_DIR")" "$GHIDRA_DIR"
   rm -rf "$tmp"
 fi
 
@@ -45,10 +59,3 @@ fi
 
 # Pre-fetch the pinned REA package so the MCP server starts quickly
 npx -y rea-agents@6.5.0 --help >/dev/null 2>&1 || true
-
-if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-  {
-    echo "export GHIDRA_INSTALL_DIR=$GHIDRA_DIR"
-    echo "export REA_JADX_MCP_JAR=$JADX_JAR"
-  } >> "$CLAUDE_ENV_FILE"
-fi
