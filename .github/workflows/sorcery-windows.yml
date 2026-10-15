@@ -1,0 +1,45 @@
+name: Sorcery - build Windows
+
+on:
+  push:
+    paths:
+      - "sorcery/**"
+      - ".github/workflows/sorcery-windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: sorcery
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          if ($LASTEXITCODE -ne 0) { python -m pip install pygame-ce }
+          python -m pip install pyinstaller
+
+      - name: Tests headless
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: python main.py --selftest
+
+      - name: Construire Sorcery.exe
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name Sorcery --hidden-import selftest --hidden-import solver main.py
+
+      - name: Publier l'artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sorcery-windows
+          path: sorcery/dist/Sorcery.exe
+          if-no-files-found: error
