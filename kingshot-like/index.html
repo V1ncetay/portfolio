@@ -39,7 +39,9 @@ body.inrun nav{display:none}
 h2{font-size:18px;margin:4px 0 10px}
 h3{font-size:15px;margin:0 0 2px;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
 .muted{color:var(--muted);font-size:13px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
+.card > .extra{flex:1 0 100%;margin-top:0}
+.card > .extra:empty{display:none}
 .card .ico{flex:0 0 48px;width:48px;height:48px;border-radius:8px;background:var(--panel2)}
 .card .body{flex:1;min-width:0}
 .card p{margin:2px 0 4px;font-size:13px;color:var(--muted)}
@@ -492,8 +494,8 @@ function buildVillageUI() {
     const d = document.createElement('div'); d.className = 'card'; d.id = 'card-' + id;
     d.innerHTML = `<canvas class="ico" width="96" height="96"></canvas>
       <div class="body"><h3>${BUILD[id].nom}<span class="lvl"></span></h3><p class="desc"></p><div class="cost"></div>
-      <div class="bar"><i></i></div><div class="extra"></div></div>
-      <button class="btn up">Améliorer</button>`;
+      <div class="bar"><i></i></div></div>
+      <button class="btn up">Améliorer</button><div class="extra"></div>`;
     box.appendChild(d);
     const ref = { el: d, lvl: d.querySelector('.lvl'), desc: d.querySelector('.desc'), cost: d.querySelector('.cost'),
       bar: d.querySelector('.bar'), barI: d.querySelector('.bar i'), btn: d.querySelector('.up'), ico: d.querySelector('.ico'), drawn: -1 };
@@ -504,7 +506,7 @@ function buildVillageUI() {
   }
 }
 function buildSubRows(host, ids, kind) {
-  host.className = 'sub';
+  host.className = 'extra sub';
   const refs = {};
   const bar = document.createElement('div'); bar.className = 'bar'; bar.innerHTML = '<i></i>';
   for (const k of ids) {
@@ -615,7 +617,7 @@ function renderHeroes() {
     const h = HEROES[id], owned = S.heroes.includes(id), sel = S.hero === id;
     const d = document.createElement('div'); d.className = 'card';
     d.innerHTML = `<canvas class="ico" width="96" height="96"></canvas><div class="body">
-      <h3>${h.nom} <span class="tag ${h.cls}">${CLS_NOM[h.cls]}</span></h3><p>${h.titre} · Dégâts ${h.dmg} · Cadence ${h.rate}/s · PV ${h.hp}</p>
+      <h3>${h.nom} <span class="tag ${h.cls}">${CLS_NOM[h.cls]}</span></h3><p>${h.titre} · Dégâts ${h.dmg} · Cadence ${fmt1(h.rate)}/s · PV ${h.hp}</p>
       <p><b style="color:var(--accent2)">${h.skill.nom}</b> (${h.skill.cd} s) : ${h.skill.desc}</p></div>
       <button class="btn ${sel ? 'alt' : ''}">${sel ? 'Choisi' : owned ? 'Choisir' : `Débloquer\n${h.price} insignes`}</button>`;
     const c = d.querySelector('canvas').getContext('2d'); drawHero(c, id, 48, 56, 2.2);
@@ -692,11 +694,11 @@ function layoutCanvas() {
 window.addEventListener('resize', () => { layoutCanvas(); drawScene(); });
 
 const ENEMY = {
-  pillard:  { nom: 'Pillard',   cls: 'fantassin', hp: 28,  spd: 38, r: 11, dmg: 6,  xp: 2 },
-  brute:    { nom: 'Brute',     cls: 'fantassin', hp: 110, spd: 24, r: 16, dmg: 14, xp: 5 },
-  loup:     { nom: 'Loup',      cls: 'cavalier',  hp: 20,  spd: 85, r: 10, dmg: 5,  xp: 2 },
-  frondeur: { nom: 'Frondeur',  cls: 'archer',    hp: 24,  spd: 34, r: 10, dmg: 6,  xp: 3, ranged: true },
-  boss:     { nom: 'Seigneur du givre', cls: 'fantassin', hp: 650, spd: 15, r: 26, dmg: 30, xp: 30, boss: true },
+  pillard:  { nom: 'Pillard',   cls: 'fantassin', hp: 28,  spd: 52, r: 11, dmg: 6,  xp: 2 },
+  brute:    { nom: 'Brute',     cls: 'fantassin', hp: 110, spd: 33, r: 16, dmg: 14, xp: 5 },
+  loup:     { nom: 'Loup',      cls: 'cavalier',  hp: 20,  spd: 110, r: 10, dmg: 5,  xp: 2 },
+  frondeur: { nom: 'Frondeur',  cls: 'archer',    hp: 24,  spd: 46, r: 10, dmg: 6,  xp: 3, ranged: true },
+  boss:     { nom: 'Seigneur du givre', cls: 'fantassin', hp: 650, spd: 21, r: 26, dmg: 30, xp: 30, boss: true },
 };
 const UPG = {
   multi:  { nom: 'Tir multiple',     desc: '+1 flèche par salve',                max: 6, f: g => g.mods.multi++ },
@@ -769,7 +771,7 @@ function startRun() {
 }
 
 function buildWave(n) {
-  const list = [], count = Math.round(7 + n * 2.6);
+  const list = [], count = Math.round(8 + n * 3);
   for (let i = 0; i < count; i++) {
     const r = Math.random(); let t = 'pillard';
     if (n >= 2 && r < 0.22) t = 'loup';
@@ -782,12 +784,12 @@ function buildWave(n) {
 }
 function nextWave() {
   G.wave++; G.state = 'wave';
-  G.spawnList = buildWave(G.wave); G.spawnT = 0.2; G.spawnGap = Math.max(0.28, 1.0 - G.wave * 0.06);
+  G.spawnList = buildWave(G.wave); G.spawnT = 0.2; G.spawnGap = Math.max(0.22, 0.9 - G.wave * 0.05);
   Snd.beep(330, 0.15, 'triangle', 0.05); setTimeout(() => Snd.beep(440, 0.2, 'triangle', 0.05), 140);
 }
 function spawnEnemy(type) {
   const d = ENEMY[type], n = G.wave;
-  const hs = 1 + 0.2 * (n - 1) + 0.012 * (n - 1) * (n - 1);
+  const hs = 1 + 0.3 * (n - 1) + 0.035 * (n - 1) * (n - 1);
   const e = { type, cls: d.cls, r: d.r, spd: d.spd * rnd(0.9, 1.1), dmg: d.dmg * (1 + 0.08 * (n - 1)), xp: d.xp,
     x: rnd(28, V.VW - 28), y: -20, atkT: 0.5, frozen: 0, flash: 0, ph: Math.random() * 6, boss: !!d.boss, ranged: !!d.ranged,
     stopY: wallY() - rnd(110, 170), hit: 0 };
@@ -841,7 +843,7 @@ function killEnemy(e) {
   const col = C[e.cls];
   for (let i = 0; i < (e.boss ? 30 : 8); i++) G.parts.push({ x: e.x, y: e.y, vx: rnd(-90, 90), vy: rnd(-110, 50), t: rnd(0.3, 0.7), col, r: rnd(1.5, 3) });
   Snd.kill();
-  while (G.xp >= G.xpNeed) { G.xp -= G.xpNeed; G.lvl++; G.xpNeed = Math.round(G.xpNeed * 1.28 + 3); G.pending++; if (!G.pickReason) G.pickReason = 'Niveau supérieur !'; }
+  while (G.xp >= G.xpNeed) { G.xp -= G.xpNeed; G.lvl++; G.xpNeed = Math.round(G.xpNeed * 1.18 + 4); G.pending++; if (!G.pickReason) G.pickReason = 'Niveau supérieur !'; }
 }
 
 function openPick() {
@@ -1139,7 +1141,8 @@ function renderRun(time) {
     for (const e of G.enemies) drawEnemy(c, e);
     // charge
     for (const ch of G.charges) {
-      c.fillStyle = '#ffd16633'; c.fillRect(ch.x - 30, ch.y, 60, WY - ch.y);
+      const tg = c.createLinearGradient(0, ch.y, 0, ch.y + 140); tg.addColorStop(0, '#ffd16640'); tg.addColorStop(1, '#ffd16600');
+      c.fillStyle = tg; c.fillRect(ch.x - 30, ch.y, 60, Math.min(140, WY - ch.y));
       for (let i = -1; i <= 1; i++) {
         const x = ch.x + i * 18, y = ch.y + Math.abs(i) * 10;
         c.fillStyle = '#6b4a2f'; c.beginPath(); c.ellipse(x, y, 6, 11, 0, 0, Math.PI * 2); c.fill();
